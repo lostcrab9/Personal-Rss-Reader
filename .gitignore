@@ -1,5 +1,4 @@
 node_modules/
-main.js
 .test-vault/
 coverage/
 .DS_Store
