@@ -44,9 +44,10 @@ function atomContent(node?: Element): string {
   if (!node) return '';
   if (node.getAttribute('type') === 'xhtml') return Array.from(node.children).map(el => el.outerHTML).join('');
   const value = node.textContent || '';
+  if (!value.trim()) return '';
   return node.getAttribute('type') === 'html' ? value : `<p>${escapeXml(value)}</p>`;
 }
-function contentWithBase(html: string, base: string, doc: Document): { html: string; image?: string } {
+export function contentWithBase(html: string, base: string, doc: Document): { html: string; image?: string } {
   // Parsing into an inert sanitized fragment also prevents source HTML from making requests.
   const fragment = createDOMPurify(doc.defaultView!).sanitize(html, { RETURN_DOM_FRAGMENT: true, ADD_ATTR: ['xml:base'], FORBID_TAGS: ['style', 'iframe'] });
   for (const el of fragment.querySelectorAll('[href],[src]')) {
@@ -102,7 +103,7 @@ export async function parseFeed(xml: string, url: string, doc: Document): Promis
     const entry: Entry = { id, sourceId, origin: 'local', sourceName: name, title, link: link || url, image: entryImage(item, parsedContent.image, contentBase),
       published, publishedTs: Number.isNaN(publishedTs) ? null : publishedTs,
       author: atom ? text(child(item, 'author') || root, 'name') : text(item, 'creator') || text(item, 'author'),
-      summary: plain(raw, doc).slice(0, 240), content: (parsedContent.html || '<p>订阅源没有提供正文，请打开原文阅读。</p>') + (raw.length > 100_000 ? '<p>正文较长，已缓存部分内容。请打开原文阅读全文。</p>' : '') };
+      summary: plain(raw, doc).slice(0, 240), content: parsedContent.html + (raw.length > 100_000 ? '<p>正文较长，已缓存部分内容。请打开原文阅读全文。</p>' : ''), contentSource: 'feed' };
     size += new TextEncoder().encode(JSON.stringify(entry)).byteLength;
     if (size > MAX_STORED_FEED) break;
     entries.push(entry);
@@ -133,5 +134,5 @@ export function exportOpml(feeds: Pick<Subscription, 'url' | 'name' | 'group'>[]
   for (const feed of feeds) { const group = groups.get(feed.group) || []; group.push(feed); groups.set(feed.group, group); }
   const outline = (feed: typeof feeds[number]) => `<outline type="rss" text="${escapeXml(feed.name)}" title="${escapeXml(feed.name)}" xmlUrl="${escapeXml(feed.url)}"/>`;
   const body = Array.from(groups, ([group, values]) => group ? `<outline text="${escapeXml(group)}">\n${values.map(outline).join('\n')}\n</outline>` : values.map(outline).join('\n')).join('\n');
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<opml version="2.0"><head><title>Qiaomu AI RSS subscriptions</title></head><body>\n${body}\n</body></opml>\n`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<opml version="2.0"><head><title>Personal RSS Reader subscriptions</title></head><body>\n${body}\n</body></opml>\n`;
 }

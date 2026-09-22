@@ -1,7 +1,7 @@
 {
-  "name": "qiaomu-ai-rss",
+  "name": "personal-rss-reader",
   "version": "0.18.2",
-  "description": "Read Qiaomu and personal RSS feeds, then add article links to your Daily Note.",
+  "description": "A private, vault-local RSS and Atom reader with optional bring-your-own-model translation.",
   "license": "GPL-3.0-only",
   "private": true,
   "scripts": {
@@ -10,12 +10,10 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src",
     "test": "vitest run",
-    "check": "npm run lint && npm run test && npm run build",
-    "test:live": "node scripts/live-api.mjs"
+    "check": "npm run lint && npm run test && npm run build"
   },
   "dependencies": {
     "dompurify": "^3.4.15",
-    "marked": "^18.0.11",
     "zod": "^4.5.4"
   },
   "devDependencies": {

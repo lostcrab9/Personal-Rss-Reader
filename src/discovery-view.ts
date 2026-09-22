@@ -1,9 +1,9 @@
 import { addSearchClear } from './search-clear';
 import { Component, ItemView, Notice, setIcon, type WorkspaceLeaf } from 'obsidian';
-import type QiaomuRssPlugin from './main';
+import type PersonalRssPlugin from './main';
 import { blogCatalogSource, blogTags, categories, discoveryFeeds, filterDiscovery, independentBlogs, type DiscoveryCollection } from './discovery';
 
-export const DISCOVERY_VIEW_TYPE = 'qiaomu-ai-rss-discovery';
+export const DISCOVERY_VIEW_TYPE = 'personal-rss-reader-discovery';
 export class DiscoveryPanel extends Component {
   private cards!: HTMLElement;
   private count!: HTMLElement;
@@ -16,7 +16,7 @@ export class DiscoveryPanel extends Component {
   private pending = new Set<string>();
   private errors = new Map<string, string>();
   private closed = false;
-  constructor(private contentEl: HTMLElement, private plugin: QiaomuRssPlugin, private embedded = false) { super(); }
+  constructor(private contentEl: HTMLElement, private plugin: PersonalRssPlugin, private embedded = false) { super(); }
   onload() {
     this.closed = false; this.contentEl.empty(); this.contentEl.addClass('qrs-discovery');
     const page = this.contentEl.createDiv('qrs-discovery-page');
@@ -28,9 +28,9 @@ export class DiscoveryPanel extends Component {
     actions.createEl('button', { text: '管理订阅' }).onclick = () => this.plugin.manageSubscriptions();
     actions.createEl('button', { text: '开始阅读', cls: 'mod-cta' }).onclick = () => { void this.plugin.readSubscriptions(); };
     const collections = page.createDiv({ cls: 'qrs-discovery-collections' });
-    const featured = collections.createEl('button', { text: `精选订阅 · ${discoveryFeeds.length}`, attr: { 'aria-pressed': String(this.collection === 'featured') } });
+    const featured = collections.createEl('button', { text: `编辑推荐 · ${discoveryFeeds.length}`, attr: { 'aria-pressed': String(this.collection === 'featured') } });
     const blogs = collections.createEl('button', { text: `独立博客 · ${independentBlogs.length}`, attr: { 'aria-pressed': String(this.collection === 'blogs') } });
-    const standard = page.createEl('p', { cls: 'qrs-discovery-standard', text: '精选标准：长期原创、持续更新、RSS 全文、个人辨识度。目前 9 个，宁缺毋滥。' });
+    const standard = page.createEl('p', { cls: 'qrs-discovery-standard', text: '推荐标准：长期原创、持续更新、RSS 全文、个人辨识度。目前 9 个，宁缺毋滥。' });
     const attribution = page.createDiv('qrs-discovery-attribution');
     attribution.createSpan({ text: '目录来自 ' });
     attribution.createEl('a', { text: '中文独立博客列表', href: blogCatalogSource, attr: { target: '_blank', rel: 'noopener noreferrer' } });
@@ -63,7 +63,7 @@ export class DiscoveryPanel extends Component {
       featured.setAttribute('aria-pressed', String(collection === 'featured')); blogs.setAttribute('aria-pressed', String(collection === 'blogs'));
       filters.toggleClass('qrs-hidden', collection !== 'featured'); standard.toggleClass('qrs-hidden', collection !== 'featured');
       for (const el of [tags, attribution]) el.toggleClass('qrs-hidden', collection !== 'blogs');
-      search.placeholder = collection === 'blogs' ? '搜索博客、作者、网址或主题…' : '搜索精选作者或主题…';
+      search.placeholder = collection === 'blogs' ? '搜索博客、作者、网址或主题…' : '搜索推荐作者或主题…';
       this.refresh();
     };
     featured.onclick = () => switchCollection('featured'); blogs.onclick = () => switchCollection('blogs'); switchCollection(this.collection);
@@ -119,7 +119,7 @@ export class DiscoveryPanel extends Component {
 /** Restores existing workspace tabs; new exploration opens inside subscription management. */
 export class DiscoveryView extends ItemView {
   private panel?: DiscoveryPanel;
-  constructor(leaf: WorkspaceLeaf, private plugin: QiaomuRssPlugin) { super(leaf); }
+  constructor(leaf: WorkspaceLeaf, private plugin: PersonalRssPlugin) { super(leaf); }
   getViewType() { return DISCOVERY_VIEW_TYPE; }
   getDisplayText() { return '探索订阅'; }
   getIcon() { return 'compass'; }

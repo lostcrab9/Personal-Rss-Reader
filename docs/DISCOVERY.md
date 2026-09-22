@@ -1,6 +1,6 @@
-# Discovery catalog — 0.5.0
+# Discovery catalog
 
-The Explore subscriptions view separates three different jobs: 9 editorially selected direct feeds, 1,342 searchable Chinese independent blogs, and 2 RSSHub routes. The featured list only includes identifiable authors or long-running independent publications with original work, recent activity, direct RSS/Atom endpoints, and a distinct editorial voice. It is intentionally short. Qiaomu Blog is already a built-in service channel and is not offered as a duplicate personal subscription.
+The Explore subscriptions view offers 9 editorial recommendations and 1,342 searchable Chinese independent blogs. Recommendations are identifiable authors or long-running independent publications with original work, recent activity, direct RSS/Atom endpoints and a distinct editorial voice. The list is intentionally short.
 
 Catalog search, category/theme filtering, and pagination are local. Selecting a source fetches and validates it through the existing subscription service before storing it, then stages that source as the reader's active channel. Blogs are rendered in batches of 60; discovery never subscribes to the entire directory automatically. Existing limits of 100 personal subscriptions and 50 cached articles per feed apply.
 
@@ -21,9 +21,9 @@ npm run check
 
 This script is a development tool; the plugin does not fetch remote catalog code or update itself.
 
-## Featured feeds and live probes
+## Recommended feeds and live probes
 
-The remaining 9 direct featured endpoints returned parseable RSS/Atom with articles on 2026-09-07. This is a point-in-time check, not a future availability promise.
+The 9 direct recommended endpoints returned parseable RSS/Atom with articles on 2026-09-07. This is a point-in-time check, not a future availability promise.
 
 | Source | Feed | Observed items |
 | --- | --- | ---: |

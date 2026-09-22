@@ -3,7 +3,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { webcrypto } from 'node:crypto';
 import { articleFragment } from '../src/content';
 import { exportOpml, feedUrl, parseFeed, parseOpml } from '../src/feeds';
-import { initialState, withServiceOrigin, type Bundle } from '../src/model';
+import { initialState, type Bundle } from '../src/model';
 import { Subscriptions } from '../src/subscriptions';
 beforeAll(() => { Object.defineProperty(window.crypto, 'subtle', { value: webcrypto.subtle, configurable: true }); });
 const rss = (body = '<p>文章 <img src="/cover.jpg" onerror="evil()"></p>') => `<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>RSS &amp; news</title><item><guid>urn:one</guid><title>First</title><link>https://example.com/posts/one</link><pubDate>Mon, 07 Sep 2026 00:00:00 GMT</pubDate><content:encoded><![CDATA[${body}]]></content:encoded></item></channel></rss>`;
@@ -36,8 +36,8 @@ describe('feed formats and article identity', () => {
   });
   it('keeps Atom plain text literal and does not load external content src', async () => {
     const parsed = await parseFeed('<feed xmlns="http://www.w3.org/2005/Atom"><title>Feed</title><entry><id>id</id><title>Title</title><content type="text">&lt;script&gt;literal&lt;/script&gt;</content></entry></feed>', 'https://example.com/feed', document);
-    const bundle: Bundle = { entry: parsed.entries[0], rewrite: null, translation: null, fetchedAt: 1 };
-    const fragment = articleFragment(bundle, 'original', document, true)!;
+    const bundle: Bundle = { entry: parsed.entries[0], fetchedAt: 1 };
+    const fragment = articleFragment(bundle, document, true)!;
     expect(fragment.querySelector('script')).toBeNull(); expect(fragment.textContent).toContain('<script>literal</script>');
   });
   it('supports RSS 1.0, descriptions, undated items and duplicate GUIDs', async () => {
@@ -66,24 +66,32 @@ describe('OPML and migration', () => {
     const result = parseOpml('<opml><body><outline text="Tech"><outline text="AI"><outline text="A" xmlUrl="https://example.com/feed"/><outline text="B" xmlUrl="https://example.com/feed#x"/><outline xmlUrl="javascript:bad"/></outline></outline></body></opml>', document);
     expect(result.feeds).toEqual([{ name: 'A', url: 'https://example.com/feed', group: 'Tech / AI' }]); expect(result.skipped).toBe(2);
   });
-  it('changing Qiaomu origins preserves personal subscriptions, favorites and read state', async () => {
+  it('migration preserves personal subscriptions, favorites and read state', async () => {
     const state = initialState(null); const service = new Subscriptions(() => state, async () => {}, async () => ({ status: 200, text: rss() }));
     const feed = await service.add('https://example.com/feed', 'Tech', document);
-    const local: Bundle = { entry: feed.entries[0], rewrite: null, translation: null, fetchedAt: 1 };
+    const local: Bundle = { entry: feed.entries[0], fetchedAt: 1 };
     const remote: Bundle = { ...local, entry: { ...local.entry, origin: 'qiaomu', id: 'remote' } };
-    state.favorites[local.entry.id] = local; state.favorites.remote = remote; state.cache[local.entry.id] = local;
-    state.readIds = [local.entry.id, 'remote']; state.entries = [remote.entry];
-    const next = withServiceOrigin(state, 'https://new.example');
+    const next = initialState({ ...state, favorites: { [local.entry.id]: local, remote }, cache: { [local.entry.id]: local, remote },
+      readIds: [local.entry.id, 'remote'], entries: [remote.entry], sources: [{ id: 'old' }], savedArticles: { remote } });
     expect(next.subscriptions).toEqual(state.subscriptions); expect(next.favorites[local.entry.id]).toEqual(local);
     expect(next.cache[local.entry.id]).toEqual(local); expect(next.favorites.remote).toBeUndefined();
-    expect(next.readIds).toEqual([local.entry.id]); expect(next.entries).toEqual([]);
+    expect(next.readIds).toEqual([local.entry.id]); expect(next).not.toHaveProperty('entries');
   });
   it('preserves v0.1 state when adding empty subscriptions', () => {
     const state = initialState({ readIds: ['existing'], settings: { remoteImages: false, listWidth: 400 } });
-    expect(state.subscriptions).toEqual([]); expect(state.readIds).toEqual(['existing']); expect(state.settings.remoteImages).toBe(false);
+    expect(state.subscriptions).toEqual([]); expect(state.readIds).toEqual([]); expect(state.settings.remoteImages).toBe(false);
   });
 });
 describe('local subscription lifecycle', () => {
+  it('starts a new subscription with five articles while later refreshes retain the normal limit', async () => {
+    const state = initialState(null);
+    const items = Array.from({ length: 8 }, (_, i) => `<item><guid>${i}</guid><title>Article ${i}</title></item>`).join('');
+    const service = new Subscriptions(() => state, async () => {}, async () => ({ status: 200, text: `<rss><channel><title>Feed</title>${items}</channel></rss>` }));
+    const feed = await service.add('https://example.com/feed', '', document);
+    expect(feed.entries).toHaveLength(5);
+    await service.refresh([feed.id], document, true);
+    expect(feed.entries).toHaveLength(8);
+  });
   it('adds, rejects duplicates, edits groups and refreshes without duplicating articles', async () => {
     const state = initialState(null), persist = vi.fn(async () => {}), transport = vi.fn(async () => ({ status: 200, text: rss() }));
     const service = new Subscriptions(() => state, persist, transport);
@@ -113,7 +121,7 @@ describe('local subscription lifecycle', () => {
     const state = initialState(null); let finish!: (value: { status: number; text: string }) => void;
     const transport = vi.fn(async () => ({ status: 200, text: rss() }));
     const service = new Subscriptions(() => state, async () => {}, transport); const feed = await service.add('https://example.com/feed', '', document);
-    const bundle: Bundle = { entry: feed.entries[0], rewrite: null, translation: null, fetchedAt: 1 };
+    const bundle: Bundle = { entry: feed.entries[0], fetchedAt: 1 };
     state.cache[bundle.entry.id] = bundle; state.favorites[bundle.entry.id] = bundle;
     transport.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
     const refresh = service.refresh([feed.id], document, true); await service.remove(feed.id); finish({ status: 200, text: rss() }); await refresh;

@@ -1,6 +1,6 @@
 import { addSearchClear } from './search-clear';
 import { Component, Platform, setIcon } from 'obsidian';
-export type ChannelSection = '聚合' | '订阅分组' | '乔木频道' | '我的订阅源' | '库内文件夹';
+export type ChannelSection = '聚合' | '订阅分组' | '我的订阅源';
 export interface ChannelChoice { id: string; name: string; section: ChannelSection; subtitle: string; icon?: string; monogram?: string; group?: string }
 export function channelMark(parent: HTMLElement, choice: ChannelChoice) {
   const mark = parent.createSpan('qrs-channel-mark');
@@ -91,7 +91,7 @@ export class ChannelPicker extends Component {
       return;
     }
     this.choices.filter(c => c.section === '聚合').forEach(c => row(c));
-    for (const [section, label] of [['乔木频道', '乔木频道'], ['我的订阅源', '个人订阅'], ['库内文件夹', '本地文件']] as const) {
+    for (const [section, label] of [['我的订阅源', '个人订阅']] as const) {
       const choices = this.choices.filter(c => c.section === section);
       const groups = section === '我的订阅源' ? this.choices.filter(c => c.section === '订阅分组') : [];
       if (!choices.length && !groups.length) continue;

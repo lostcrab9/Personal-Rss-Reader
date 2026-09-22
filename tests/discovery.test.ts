@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { discoveryFeeds, filterDiscovery, independentBlogs } from '../src/discovery';
-import { initialState, safeUrl, withServiceOrigin } from '../src/model';
+import { initialState, safeUrl } from '../src/model';
 
 describe('local discovery catalog', () => {
   it('bundles unique safe feed URLs and blog home pages', () => {
@@ -27,16 +27,15 @@ describe('local discovery catalog', () => {
     expect(blogs.every(feed => feed.tags?.includes('开源'))).toBe(true);
     expect(filterDiscovery('', '全部')).toHaveLength(discoveryFeeds.length);
   });
-  it('migrates settings and preserves existing feed URLs across instance and Qiaomu changes', () => {
+  it('migrates settings and preserves existing feed URLs', () => {
     const state = initialState({ settings: { folder: 'Notes' }, subscriptions: [{ id: 'test', url: 'https://old.example/36kr/newsflashes', name: 'News' }] });
-    const next = withServiceOrigin(state, 'https://qiaomu.example');
-    expect(next.subscriptions[0].url).toBe('https://old.example/36kr/newsflashes');
-    expect(initialState({ settings: {} }).settings.lastSource).toBe('');
+    expect(state.subscriptions[0].url).toBe('https://old.example/36kr/newsflashes');
+    expect(initialState({ settings: {} }).settings.lastSource).toBe('@local');
   });
 });
 
 it('preserves channel reading checkpoints across saved-state parsing', () => {
-  const checkpoint = { entries: [], bundle: null, mode: 'original', filter: 'unread', query: '文章', unread: ['a'], cursor: 'page-2', hasMore: true, listTop: 620, readerTop: 1420, articlePending: false };
+  const checkpoint = { entries: [], bundle: null, mode: 'original', filter: 'unread', query: '文章', unread: ['a'], listTop: 620, readerTop: 1420, articlePending: false };
   const state = initialState({ channelStates: { channel: checkpoint } });
   expect(initialState(JSON.parse(JSON.stringify(state))).channelStates.channel).toEqual(checkpoint);
   expect(initialState({ channelStates: { invalid: { listTop: -1 } } }).channelStates).toEqual({});

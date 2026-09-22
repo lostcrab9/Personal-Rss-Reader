@@ -1,9 +1,9 @@
 {
-  "id": "qiaomu-ai-rss",
-  "name": "Qiaomu AI RSS",
+  "id": "personal-rss-reader",
+  "name": "Personal RSS Reader",
   "version": "0.18.2",
   "minAppVersion": "1.13.0",
-  "description": "Read Qiaomu and personal RSS feeds, then add article links to your Daily Note.",
+  "description": "A private, vault-local RSS and Atom reader with optional bring-your-own-model translation.",
   "author": "向阳乔木",
   "authorUrl": "https://github.com/joeseesun",
   "isDesktopOnly": false

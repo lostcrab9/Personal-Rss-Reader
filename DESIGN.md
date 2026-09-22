@@ -1,37 +1,28 @@
-# Reading-first UI
+# Personal RSS Reader design
 
-## Intent and contract
+## Product boundary
 
-A quiet, dense RSS reader inside Obsidian. The content is the primary focus. The user must see a useful article immediately after selection, switch articles without returning to a dashboard, and save the current version as a note. Preserve native theme integration and existing article/API behavior.
+The plugin is a vault-local reader for feeds the user explicitly adds, imports or chooses from the offline Explore directory. There is no project service, account, aggregated channel, note integration or vault Markdown source.
 
-Direction fixed by user feedback: default image display, compact navigation, adjustable list width, accurate icons. This is a focused revision of the working reader, not an open-ended visual-style selection. Visual variance 3/10 (familiar), motion 1/10 (instant reading actions), list density 8/10 and article density 4/10 (fast scan, comfortable reading).
+## Reader
 
-## Primary references, checked 2026-09-07
+The primary view is a two-pane list and article reader. The channel picker contains only My Subscriptions, subscription groups and individual feeds. Search, unread state, favorites, list width, focus mode and typography remain local and persist across sessions.
 
-- [Readwise appearance](https://docs.readwise.io/reader/docs/faqs/appearance): collapsible reading panels and preferences for hiding them. Transfer: one-button list collapse, `[`, retained reading position.
-- [Readwise navigation](https://docs.readwise.io/reader/docs/faqs/navigation): keyboard-driven reading and command discovery. Transfer: local `j` / `k`, `/`, and native searchable channel picker.
-- [Readwise long-form reading](https://docs.readwise.io/reader/guides/workflows/longform-reading): put triage controls behind reading. Transfer: remove global search/filter/status header; one compact 44px reading toolbar (52px narrow).
-- [RSSFlow official docs](https://github.com/Pizone-ai/RSSFlow-doc): compact sidebar article triage, minimal density, and separate Zen Reader. Transfer: tight rows, Chinese excerpts, optional sidebar, no dashboard above the article.
-- [Lucide](https://lucide.dev/icons): use Obsidian's bundled Lucide SVG icons, not approximations or emoji. State: `circle-check` read / `circle` unread; `bookmark` outlined/filled favorite; `file-plus-2` save a note; `panel-left-close/open` sidebar visibility; chevrons for previous/next.
+RSS / Atom HTML is sanitized before display. Images are optional, validated and rendered from the local image cache. Feed refreshes have a 20-second UI timeout, at most three workers and preserve old entries on failure.
 
-## Layout and behavior
+## Translation
 
-- Desktop: default 300px article list, 1px divider with 9px drag hit region, remaining width for article. List width adjustable 220–520px, keyboard arrows on the separator adjust by 20px, double-click resets to 300px. Clamp rendered list width to retain at least 330px for reading.
-- List header: channel picker and search/refresh icons. Three compact filter buttons. Search input appears on demand. Only errors occupy a status row.
-- Reading: one 44px toolbar with list toggle, version select, article navigation and bookmark/read/note actions. External link and reload in native menu. Source/date/AI label share one metadata line.
-- At ≤650px: list and article are separate screens, so list controls consume no reading height. Toolbar actions remain reachable without hover. Previous/next chevrons hide in narrower panes; keyboard navigation remains available.
-- Article text: native font, 17px desktop / 16px narrow, 1.9 line height, max-width 780px including padding. Images retain their natural aspect ratio and never exceed the column.
-- Persist width and local reading state. Opening an article records read state even if the article is served from cache. Keep the current article in the unread view while navigating, so a read-state update cannot make navigation jump.
-- Images: sanitize HTML first, strip network `src` before insertion, download raster bytes through Obsidian, cache within this plugin's vault directory, then render a local Blob URL. Lazy loading, retry on failure, 8 MB per image, 64 MB/100-file disk cap. Revoke Blob URLs when replacing/closing the view. SVG/HTML payloads are not displayed as images.
+AI translation is optional and manual. The user supplies one OpenAI-compatible Base URL, plaintext local API key, model and target language.
 
-## Theme and interaction rules
+The implementation is split into four boundaries:
 
-Use Obsidian theme variables. No imported fonts, marketing hero, dashboard statistics, global status banner, or permanent large search field. Keep row selection subtle, unread dots explicit, focus rings visible, article scroll separate from list scroll, and keyboard actions local to this view. Respect reduced motion for refresh indicators.
+- `translation/segments.ts`: stable visible-block IDs, normalized text, content hashing, long-block splitting and batch construction.
+- `translation/service.ts`: endpoint validation, minimal chat-completion requests, strict JSON-array parsing, timeout and actionable error categories.
+- `translation/store.ts`: article artifacts, configuration identity, global translation memory and bounded LRU cleanup.
+- `translation/controller.ts`: viewport-first ordering, source deduplication, two-worker scheduling, finite retry, incremental persistence and stale-response rejection.
 
-## Acceptance
+The view always starts from sanitized original HTML. Translations are inserted with `textContent`, never interpreted as HTML. Original, bilingual and translated modes read the same artifact and never trigger requests merely by switching display mode. Images, code, tables and untranslated content remain visible; source blocks containing links remain present in translated mode so navigation is not lost.
 
-Desktop and 390px screenshots; real loaded article images and list thumbnails with nonzero natural dimensions and Blob URLs; resize/persistence; sidebar focus toggle retaining scroll; grouped channel modal; keyboard next/previous; correct icons; Daily Note append/split; offline image cache; no runtime errors or horizontal overflow.
+## Validation
 
-## Personal subscriptions (0.2.0)
-
-Keep the reading surface unchanged. A single plus icon in the existing list toolbar opens a native subscription manager. The searchable channel picker contains Qiaomu, My Subscriptions, group paths and individual feeds. Names/groups are edited in a native modal, with explicit unsubscribe confirmation preserving favorites/notes. OPML uses a preview before importing; export writes a vault file. Personal article mode is original-only so unavailable AI actions do not occupy the reader. Empty/error states explain add/refresh actions.
+Run `npm run check`. UI validation should cover desktop and narrow/mobile panes, subscription/discovery flows, cached/offline reading, all three translation modes, partial failure/retry, article switches during translation and persistence after reload.

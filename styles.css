@@ -139,13 +139,16 @@
 .qrs-subscription-message { color:var(--text-muted); font-size:12px; padding:8px 0; overflow-wrap:anywhere; }
 .qrs-subscription-tools { display:flex; flex-wrap:wrap; gap:8px; margin:8px 0 16px; }
 .qrs-subscription-list { max-height:40vh; overflow-y:auto; }
-.qrs-subscription-row { display:flex; align-items:center; gap:8px; padding:12px 0; border-bottom:1px solid var(--background-modifier-border); }
+.qrs-subscription-row { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:12px 0; border-bottom:1px solid var(--background-modifier-border); }
 .qrs-subscription-info { flex:1; min-width:0; }
 .qrs-subscription-name { font-weight:500; overflow-wrap:anywhere; }
 .qrs-subscription-detail,.qrs-subscription-help { font-size:12px; color:var(--text-muted); margin-top:5px; overflow-wrap:anywhere; }
 .qrs-subscription-error { font-size:12px; color:var(--text-error); margin-top:6px; }
 .qrs-subscription-icon { display:flex; align-items:center; justify-content:center; padding:8px; width:36px; height:36px; flex-shrink:0; background:transparent; box-shadow:none; }
 .qrs-subscription-icon svg { width:16px; height:16px; }
+.qrs-subscription-confirm { display:flex; flex-basis:100%; flex-wrap:wrap; align-items:center; gap:8px; }
+.qrs-subscription-confirm span { flex:1; min-width:180px; font-size:13px; }
+.qrs-subscription-icon[hidden] { display:none; }
 .qrs-opml-text { width:100%; min-height:120px; margin-top:12px; resize:vertical; }
 .qrs-opml-preview { margin:12px 0; max-height:200px; overflow:auto; font-size:13px; overflow-wrap:anywhere; }
 @media (max-width:500px) {
@@ -252,3 +255,20 @@
 .qrs-welcome-keys > span { display:flex; align-items:center; gap:5px; }
 .qrs-welcome-keys kbd { font-size:10px; padding:0; background:transparent; border:0; box-shadow:none; }
 .is-mobile .qrs-welcome button.qrs-welcome-next { min-height:44px; }
+.qrs-translation {
+  color: var(--text-normal);
+  margin: 0.45em 0 1em;
+  padding-left: 0.8em;
+  border-left: 2px solid var(--interactive-accent);
+  white-space: pre-wrap;
+}
+
+.qrs-title-translation {
+  font-size: 1.35em;
+  font-weight: 600;
+  margin-top: -0.5em;
+}
+
+.qrs-original-hidden {
+  display: none;
+}

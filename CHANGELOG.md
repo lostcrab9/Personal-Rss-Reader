@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.18.2-personal — 2026-09-09
+
+- Rework the plugin into Personal RSS Reader with personal feeds as the only runtime content path.
+- Remove the Qiaomu service, note capture, Daily Notes, return links, image dragging and vault Markdown sources.
+- Add opt-in bring-your-own-model paragraph translation, strict JSON validation, incremental cache, translation memory and original/bilingual/translated modes.
+- Rename visible product metadata while retaining original copyright and license notices.
+
 ## 0.18.2 — 2026-09-07
 
 - Use a calm sage article selection palette with separate dark-mode and hover states; preserve row density and remove the tinted inset frame.

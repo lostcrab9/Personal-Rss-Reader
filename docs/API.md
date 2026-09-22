@@ -1,26 +1,28 @@
-# Public API contract
+# Network contracts
 
-Default origin: `https://rss.qiaomu.ai`. HTTPS only. No authentication required by these public endpoints. Requests use Obsidian `requestUrl`; all plugin service calls are GET. No background polling or automatic server refresh/AI-generation requests.
+Personal RSS Reader has no project-operated API. Runtime requests have two independent paths.
 
-| Endpoint | Response used |
-| --- | --- |
-| `/api/sources?ready=rewrite` | `{ sources: [{ id, name, enabled }] }` |
-| `/api/entries?limit=100&ready=rewrite` | `{ entries: [...] }` |
-| `/api/sources/:id/entries?limit=40&ready=rewrite&cursor=...` | `{ entries, hasMore, nextCursor }` |
-| `/api/entry/:id` | `{ entry: { id, sourceId, title, titleZh, content, link, image, ... } }` |
-| `/api/entry/:id/rewrite` | `{ rewrite: { title, body } | null }`, Markdown body |
-| `/api/entry/:id/translation` | `{ translation: { content: [{ target, targetHtml }] } | null }` |
+## RSS / Atom feeds
 
-IDs and cursors are URL-encoded. Zod validates response shapes and strips unused fields. JSON error documents and non-2xx responses are never treated as article content. Requests have a 20-second UI timeout; Obsidian's request API does not expose cancellation, so the underlying network request may finish later. View-generation checks prevent stale responses from replacing a newer selection or writing into a closed/reset view.
+HTTP(S) GET requests use Obsidian `requestUrl` and are sent directly to URLs added manually, imported from OPML or selected in Explore. The parser accepts RSS 2.x, RSS 1.0/RDF and Atom 1.0.
 
-A missing translation or rewrite is distinct from an endpoint failure. Optional asset failures retain the article and display a warning. On network failure, an existing cached article remains readable. The default stream is capped at 100 articles; channel histories use the actual server cursor rather than guessed offsets. Local state is separate from the web/iOS account state.
+Limits and safeguards:
 
-This contract was checked against the live service and the native iOS API client. Run `npm run test:live` to repeat the read-only checks. The local web checkout may lag behind the deployed channel-pagination API.
+- 20-second UI timeout and at most three concurrent feed refreshes;
+- 5 MB input XML, with DTD and entity declarations rejected;
+- inspect at most 200 items and retain at most 50 / about 1 MB per feed;
+- at most 100,000 source characters per article body;
+- sanitize HTML and resolve only safe HTTP(S) links and images;
+- stable SHA-256 IDs based on feed URL and item identity;
+- refresh failure preserves cached articles;
+- OPML import is additive and performs no feed requests.
 
-## Personal feeds (0.2.0)
+## OpenAI-compatible translation
 
-Personal feeds bypass the Qiaomu API. HTTP(S) GET requests through `requestUrl` are parsed as RSS 2.x, RSS 1.0/RDF or Atom 1.0 XML. Content goes through the existing HTML sanitizer and image cache. List thumbnails use Media RSS, image enclosures, Atom enclosures, then the first safe content image. Article IDs are SHA-256 hashes of normalized feed URL plus GUID/Atom ID (fallback: article link, then title/date), in a separate local namespace. Local articles never request Qiaomu rewrite/translation assets.
+Translation uses a non-streaming `POST {baseUrl}/chat/completions` only after a manual user action. HTTPS is required except for explicit `localhost`, `127.0.0.1` and `::1` HTTP endpoints.
 
-At most 100 subscriptions; 5 MB input XML; inspect the first 200 entries, retain at most 50 and about 1 MB per source; each body is limited to 100,000 characters with a visible truncation notice. XML DTD/entity declarations are rejected. Requests use a 20-second UI timeout and refreshes use up to three workers per batch; in-flight requests for the same feed are shared. Failure preserves cached entries. Importing OPML is additive and non-fetching; nested group names become paths and duplicate normalized URLs are skipped.
+The JSON request contains the configured model, temperature 0 and two chat messages: a minimal translation instruction containing the target language, and a JSON string array containing the current batch's plain-text blocks. The API key is sent only in the Bearer authorization header.
 
-Format references: [RSS specification](https://www.rssboard.org/rss-specification), [Atom RFC 4287](https://www.rfc-editor.org/rfc/rfc4287), [OPML 2.0](https://opml.org/spec2.opml).
+The response is accepted only when `choices[0].message.content` is a JSON string array with exactly the same number of string elements as the request. Invalid JSON, non-string items, missing items and extra items reject the entire batch.
+
+401/403 errors are reported as authentication failures and are not retried. 429, timeout/network and 5xx errors are temporary and receive at most two retries with backoff. Each batch contains at most four blocks and about 1,200 characters; at most two batches run concurrently.

@@ -1,14 +1,14 @@
 import { addSearchClear } from './search-clear';
 import { ChannelPicker, channelMark, type ChannelChoice } from './channel-picker';
-import { Component, MarkdownRenderer, ItemView, Menu, Notice, Platform, setIcon, type WorkspaceLeaf } from 'obsidian';
-import type QiaomuRssPlugin from './main';
-import { vaultSourceId } from './vault-source';
-import { enableImageDrag, prepareMarkdownImageDrags } from './image-drag';
-import { SelectionCapture } from './selection';
+import { ItemView, Menu, Notice, Platform, setIcon, type WorkspaceLeaf } from 'obsidian';
+import type PersonalRssPlugin from './main';
 import { readingFonts, selectableFonts, fontFamily } from './fonts';
 import { articleFragment } from './content';
 import { modeLabels, modeSchema, readingFontSchema, safeUrl, titleOf, type ChannelState, type Bundle, type Entry, type Mode } from './model';
-export const VIEW_TYPE = 'qiaomu-ai-rss-reader';
+import { contentHash, extractSegments, type TranslationSegment } from './translation/segments';
+import { validateTranslationConfig } from './translation/service';
+import { needsWebArticle } from './web-articles';
+export const VIEW_TYPE = 'personal-rss-reader';
 type Filter = 'all' | 'unread' | 'favorites';
 function feedHost(url: string) { try { return new URL(url).hostname; } catch { return 'RSS'; } }
 export class ReaderView extends ItemView {
@@ -18,12 +18,12 @@ export class ReaderView extends ItemView {
   private checkpointTimer?: number;
   private lastListTop = 0;
   private lastReaderTop = 0;
-  private channelKey() { return JSON.stringify([this.plugin.state.settings.baseUrl, this.source]); }
+  private channelKey() { return this.source; }
   private saveChannel() {
     if (!this.list || !this.reader) return;
     this.plugin.state.channelStates[this.channelKey()] = {
       entries: this.entries, bundle: this.bundle, mode: this.mode, filter: this.filter, query: this.query,
-      unread: [...this.unreadSession], cursor: this.cursor, hasMore: this.hasMore,
+      unread: [...this.unreadSession],
       listTop: this.pendingScroll?.listTop ?? (this.list.clientHeight ? this.list.scrollTop : this.lastListTop),
       readerTop: this.pendingScroll?.readerTop ?? (this.reader.clientHeight ? this.reader.scrollTop : this.lastReaderTop), articlePending: this.articleLoading,
     };
@@ -42,15 +42,14 @@ export class ReaderView extends ItemView {
   private restoreChannel(saved: ChannelState) {
     this.entries = saved.entries; this.bundle = saved.bundle; this.mode = saved.mode;
     this.filter = saved.filter; this.query = saved.query; this.unreadSession = new Set(saved.unread);
-    this.cursor = saved.cursor; this.hasMore = saved.hasMore; this.lastListTop = saved.listTop; this.lastReaderTop = saved.readerTop;
+    this.lastListTop = saved.listTop; this.lastReaderTop = saved.readerTop;
     this.pendingScroll = { listTop: saved.listTop, readerTop: saved.readerTop };
     this.searchInput.value = this.query; this.searchBox.toggleClass('is-hidden', !this.query);
     this.contentEl.toggleClass('qrs-has-article', !!this.bundle);
     this.renderFilters(); this.renderList(); this.renderReader(); this.restoreOffsets();
+    if (saved.bundle) void this.computeTranslationHash(this.articleVersion, saved.bundle.entry.id);
     if (saved.articlePending && saved.bundle) void this.openArticle(saved.bundle.entry, saved);
   }
-  private markdownComponent?: Component;
-  private selectionCapture?: SelectionCapture;
   private list!: HTMLElement;
   private reader!: HTMLElement;
   private status!: HTMLElement;
@@ -62,12 +61,10 @@ export class ReaderView extends ItemView {
   private refreshButton!: HTMLButtonElement;
   private filters!: HTMLElement;
   private entries: Entry[] = [];
-  private source = '';
+  private source = '@local';
   private filter: Filter = 'all';
   private unreadSession = new Set<string>();
   private query = '';
-  private cursor = '';
-  private hasMore = false;
   private loading = false;
   private articleLoading = false;
   private focused = false;
@@ -85,11 +82,13 @@ export class ReaderView extends ItemView {
   private thumbnailPending = new Map<string, Promise<string | null>>();
   private thumbnailVersion = 0;
   private imageObserver?: IntersectionObserver;
-  constructor(leaf: WorkspaceLeaf, private plugin: QiaomuRssPlugin) {
-    super(leaf); this.mode = plugin.state.settings.defaultMode;
+  private translationHash = '';
+  private translationRunning = false;
+  constructor(leaf: WorkspaceLeaf, private plugin: PersonalRssPlugin) {
+    super(leaf); this.mode = 'original';
   }
   getViewType() { return VIEW_TYPE; }
-  getDisplayText() { return 'Qiaomu AI RSS'; }
+  getDisplayText() { return '个人 RSS 阅读器'; }
   getIcon() { return 'rss'; }
   onOpen(): Promise<void> {
     this.reset();
@@ -100,52 +99,11 @@ export class ReaderView extends ItemView {
       this.reader.querySelector('[aria-controls="' + this.appearanceId + '"]')?.setAttribute('aria-expanded', 'false');
       this.run(() => this.plugin.persist());
     });
-    this.registerDomEvent(this.contentEl, 'contextmenu', event => {
-      // Let mobile WebViews open their native text-selection handles.
-      if (Platform.isMobileApp || ('pointerType' in event && event.pointerType === 'touch')) return;
-      const target = event.target;
-      if (!(target instanceof this.contentEl.ownerDocument.defaultView!.HTMLElement) || !target.closest('.qrs-article') || !this.bundle) return;
-      event.preventDefault();
-      const bundle = this.bundle, mode = this.mode, note = this.plugin.currentNote();
-      const selection = this.contentEl.ownerDocument.getSelection();
-      const prose = target.closest('.qrs-article')?.querySelector('.qrs-prose');
-      const excerpt = selection && prose?.contains(selection.anchorNode) && prose.contains(selection.focusNode) ? selection.toString().trim() : '';
-      const append = async (current: boolean) => {
-        try {
-          this.plugin.remember(bundle);
-          const result = await this.plugin.appendToDailyNote(bundle.entry, excerpt, mode, current && note ? note : undefined);
-          new Notice(result.added ? `已追加到 ${result.file.basename}` : '这篇文章或摘录已在笔记中。');
-        } catch (error) { new Notice(error instanceof Error ? error.message : '无法追加到笔记。'); }
-      };
-      new Menu().setUseNativeMenu(false)
-        .addItem(item => item.setTitle(note ? `追加到当前笔记：${note.basename}` : '追加到当前笔记（请先打开笔记）').setIcon('file-pen-line').setDisabled(!note).onClick(() => append(true)))
-        .addItem(item => item.setTitle('追加到今日日记').setIcon('calendar-days').onClick(() => append(false)))
-        .showAtMouseEvent(event);
-    });
-    this.selectionCapture = new SelectionCapture(this.contentEl.ownerDocument, () => this.reader, () => {
-      const bundle = this.bundle, mode = this.mode;
-      if (!bundle || !this.plugin.state.settings.selectionPopup) return null;
-      const note = this.plugin.currentNote();
-      const capture = async (text: string, current: boolean) => {
-        try {
-          this.plugin.remember(bundle);
-          const result = current && note
-            ? await this.plugin.appendToDailyNote(bundle.entry, text, mode, note)
-            : await this.plugin.noteArticle(bundle.entry, text, mode);
-          new Notice(result.added ? `摘录已添加到 ${result.file.basename}` : '这段摘录已在笔记中。');
-        } catch (error) { new Notice(error instanceof Error ? error.message : '摘录失败，请重试。'); }
-      };
-      return [
-        { label: '追加到今日日记', icon: 'calendar-plus', save: text => capture(text, false) },
-        { label: note ? `追加到当前笔记：${note.basename}` : '追加到当前笔记（请先打开笔记）', icon: 'file-pen-line', disabled: !note, save: text => capture(text, true) },
-      ];
-    });
     return Promise.resolve();
   }
   onClose(): Promise<void> {
     this.saveChannel(); this.channelPicker?.close(false); this.stopRestoring();
     if (this.checkpointTimer) window.clearTimeout(this.checkpointTimer);
-    this.selectionCapture?.dispose();
     this.closed = true; this.listVersion++; this.articleVersion++; this.clearImages(); this.clearThumbnails(); this.contentEl.onkeydown = null;
     return this.plugin.persist().catch(() => undefined);
   }
@@ -157,10 +115,9 @@ export class ReaderView extends ItemView {
     const remembered = this.plugin.state.settings.lastSource;
     const localExists = this.plugin.state.subscriptions.some(feed => feed.id === remembered);
     const groupExists = remembered.startsWith('@group:') && this.plugin.state.subscriptions.some(feed => feed.group === remembered.slice(7));
-    this.focused = false; this.source = remembered === '@local' || this.plugin.state.settings.markdownFolders.some(folder => vaultSourceId(folder) === remembered) || groupExists || localExists || this.plugin.state.sources.some(source => source.id === remembered) ? remembered : '';
-    this.cursor = ''; this.bundle = null; this.loading = false; this.hasMore = false;
-    this.mode = this.plugin.state.settings.defaultMode;
-    this.entries = this.personalScope() ? this.localEntries() : this.source ? [] : this.plugin.state.entries;
+    this.focused = false; this.source = remembered === '@local' || groupExists || localExists ? remembered : '@local';
+    this.bundle = null; this.loading = false; this.translationHash = ''; this.translationRunning = false;
+    this.mode = 'original'; this.entries = this.localEntries();
     this.build();
     const saved = this.plugin.state.channelStates[this.channelKey()];
     if (saved) { this.restoreChannel(saved); if (!this.entries.length) void this.loadEntries(); }
@@ -173,7 +130,7 @@ export class ReaderView extends ItemView {
     const button = parent.createEl('button', { cls: 'qrs-icon', attr: { 'data-qrs-label': label } });
     setIcon(button, icon); button.createSpan({ cls: 'qrs-visually-hidden', text: label }); button.addEventListener('click', action); return button;
   }
-  refreshPreferences() { this.selectionCapture?.clear(); this.applyAppearance(); if (this.appearanceOpen) this.renderReader(true); }
+  refreshPreferences() { this.applyAppearance(); if (this.appearanceOpen) this.renderReader(true); }
   private applyAppearance() {
     const settings = this.plugin.state.settings;
     this.contentEl.dataset.readingFont = settings.fontFamily;
@@ -198,7 +155,7 @@ export class ReaderView extends ItemView {
     this.renderChannel(); this.channelButton.addEventListener('click', () => this.pickChannel());
     this.addIconButton(bar, 'plus', '添加或管理订阅', () => this.plugin.manageSubscriptions());
     this.addIconButton(bar, 'search', '搜索文章 /', () => this.toggleSearch());
-    this.refreshButton = this.addIconButton(bar, 'refresh-cw', '刷新文章', () => { void this.loadEntries(false, true); });
+    this.refreshButton = this.addIconButton(bar, 'refresh-cw', '刷新文章', () => { void this.loadEntries(true); });
     this.filters = sidebar.createDiv({ cls: 'qrs-filters', attr: { role: 'group' } });
     this.renderFilters();
     this.searchBox = sidebar.createDiv('qrs-search-box'); this.searchBox.toggleClass('is-hidden', !this.query);
@@ -242,19 +199,13 @@ export class ReaderView extends ItemView {
     const feeds = this.plugin.state.subscriptions;
     const groups = [...new Set(feeds.map(feed => feed.group).filter(Boolean))].sort();
     return [
-      { id: '', name: '乔木精选', section: '聚合', subtitle: '乔木筛选的高质量内容', icon: 'tree-deciduous' },
       { id: '@local', name: '我的订阅', section: '聚合', subtitle: `${feeds.length} 个个人订阅源`, icon: 'rss' },
-      ...this.plugin.state.settings.markdownFolders.map(folder => ({ id: vaultSourceId(folder), name: folder === '/' ? '整个库' : folder.split('/').at(-1)!, section: '库内文件夹' as const, subtitle: folder, icon: folder.endsWith('.md') ? 'file-text' : 'folder-open' })),
       ...groups.map(group => ({ id: `@group:${group}`, name: group, section: '订阅分组' as const,
         subtitle: `${feeds.filter(feed => feed.group === group).length} 个订阅源`, icon: 'folder' })),
-      ...this.plugin.state.sources.filter(source => source.enabled !== false).map(source => ({ id: source.id, name: source.name, section: '乔木频道' as const,
-        subtitle: ({ article: '文章', news: '新闻', podcast: '播客' } as Record<string, string>)[source.category || ''] || source.category || '乔木内容频道', monogram: source.name.trim().slice(0, 1) })),
       ...feeds.map(feed => ({ id: feed.id, name: feed.name, section: '我的订阅源' as const,
         subtitle: `${feed.group ? `${feed.group} · ` : ''}${feedHost(feed.url)} · ${feed.entries.length} 篇`, monogram: feed.name.trim().slice(0, 1), group: feed.group })),
     ];
   }
-  private vaultScope() { return this.source.startsWith('@vault:'); }
-  private personalScope() { return this.source === '@local' || this.source.startsWith('@group:') || this.source.startsWith('local:'); }
   private selectedFeeds() {
     return this.plugin.state.subscriptions.filter(feed => this.source === '@local' || feed.id === this.source ||
       (this.source.startsWith('@group:') && feed.group === this.source.slice(7)));
@@ -275,11 +226,11 @@ export class ReaderView extends ItemView {
     this.unreadSession.clear();
     this.listVersion++; this.loading = false; this.refreshButton.removeClass('is-loading');
     this.articleLoading = false; this.reader.setAttribute('aria-busy', 'false');
-    this.source = source; this.cursor = ''; this.entries = []; this.hasMore = false;
+    this.source = source; this.entries = []; this.translationHash = ''; this.translationRunning = false;
     this.plugin.state.settings.lastSource = source; this.run(() => this.plugin.persist());
     this.bundle = null; this.articleVersion++; this.focused = false; this.contentEl.removeClass('qrs-focus');
     this.contentEl.removeClass('qrs-focus'); this.contentEl.removeClass('qrs-has-article');
-    this.entries = this.personalScope() ? this.localEntries() : source ? [] : this.plugin.state.entries;
+    this.entries = this.localEntries();
     this.status.setText(''); this.renderChannel();
     const saved = this.plugin.state.channelStates[this.channelKey()];
     if (saved) { this.restoreChannel(saved); if (!this.entries.length && refresh) void this.loadEntries(); return; }
@@ -338,34 +289,18 @@ export class ReaderView extends ItemView {
     const entries = this.visibleEntries(); const index = entries.findIndex(entry => entry.id === this.bundle?.entry.id);
     const next = entries[index + direction]; if (next) void this.openArticle(next);
   }
-  private async loadEntries(more = false, force = false) {
-    if (this.loading && more) return;
+  private async loadEntries(force = false) {
+    if (this.loading) return;
     const version = ++this.listVersion; this.loading = true; this.status.setText(''); this.refreshButton.addClass('is-loading');
-    const state = this.plugin.state;
     try {
-      if (this.vaultScope()) { this.entries = this.plugin.vaultSources.entries(this.source.slice(7)); this.hasMore = false; return; }
-      if (this.personalScope()) {
-        const feeds = this.selectedFeeds();
-        await this.plugin.subscriptions.refresh(feeds.map(feed => feed.id), this.reader.ownerDocument, force, () => {
-          if (!this.closed && version === this.listVersion) { this.entries = this.localEntries(); this.renderList(); }
-        });
-        if (this.closed || version !== this.listVersion) return;
-        this.entries = this.localEntries(); this.hasMore = false;
-        const failed = feeds.filter(feed => feed.error).length;
-        this.status.setText(failed ? `${failed} 个订阅刷新失败，保留已有文章。可在订阅管理中查看详情。` : '');
-        return;
-      }
-      const api = this.plugin.api();
-      const [page, sources] = await Promise.allSettled([api.entries(this.source, more ? this.cursor : ''), api.sources()]);
+      const feeds = this.selectedFeeds();
+      await this.plugin.subscriptions.refresh(feeds.map(feed => feed.id), this.reader.ownerDocument, force, () => {
+        if (!this.closed && version === this.listVersion) { this.entries = this.localEntries(); this.renderList(); }
+      });
       if (this.closed || version !== this.listVersion) return;
-      if (sources.status === 'fulfilled') { state.sources = sources.value.sources; this.renderChannel(); }
-      if (page.status === 'rejected') throw page.reason;
-      this.entries = more ? [...new Map([...this.entries, ...page.value.entries].map(entry => [entry.id, entry])).values()] : page.value.entries;
-      this.cursor = page.value.nextCursor || ''; this.hasMore = !!page.value.hasMore && !!this.cursor;
-      if (!this.source) { state.entries = this.entries; state.updatedAt = Date.now(); }
-      await this.plugin.persist();
-      if (this.closed || version !== this.listVersion) return;
-      this.status.setText(sources.status === 'rejected' ? '频道加载失败，请刷新重试。' : '');
+      this.entries = this.localEntries();
+      const failed = feeds.filter(feed => feed.error).length;
+      this.status.setText(failed ? `${failed} 个订阅刷新失败，保留已有文章。可在订阅管理中查看详情。` : '');
     } catch (error) {
       if (this.closed || version !== this.listVersion) return;
       this.status.setText(`${error instanceof Error ? error.message : '网络不可用。'}${this.entries.length ? ' 正在显示缓存。' : ' 点击刷新重试。'}`);
@@ -377,17 +312,13 @@ export class ReaderView extends ItemView {
     const state = this.plugin.state;
     const entries = this.filter === 'favorites' ? Object.values(state.favorites).map(b => b.entry) : this.entries;
     const query = this.query.trim().toLocaleLowerCase();
-    return entries.filter(entry => (this.vaultScope() ? entry.origin === 'vault' && entry.sourceId === this.source : this.personalScope()
-      ? entry.origin === 'local' && (this.source === '@local' || this.selectedFeeds().some(feed => feed.id === entry.sourceId))
-      : entry.origin !== 'local' && entry.origin !== 'vault' && (!this.source || entry.sourceId === this.source)) &&
+    return entries.filter(entry => entry.origin === 'local' && (this.source === '@local' || this.selectedFeeds().some(feed => feed.id === entry.sourceId)) &&
       (this.filter !== 'unread' || !state.readIds.includes(entry.id) || this.unreadSession.has(entry.id) || entry.id === this.bundle?.entry.id) &&
       (!query || `${titleOf(entry)} ${entry.title} ${entry.summary || ''} ${this.sourceName(entry)}`.toLocaleLowerCase().includes(query)));
   }
-  private sourceName(entry: Entry) { return this.plugin.state.subscriptions.find(feed => feed.id === entry.sourceId)?.name || entry.sourceName || this.plugin.state.sources.find(source => source.id === entry.sourceId)?.name || entry.sourceId; }
+  private sourceName(entry: Entry) { return this.plugin.state.subscriptions.find(feed => feed.id === entry.sourceId)?.name || entry.sourceName || entry.sourceId; }
   private excerpt(entry: Entry): string {
-    if (entry.summaryZh) return entry.summaryZh;
-    const text = entry.rewrite?.body.split('\n\n').find(line => /[\u3400-\u9fff]/.test(line) && !line.startsWith('#') && !line.startsWith('!['));
-    return (text || entry.summary || '').replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/[*_`#]/g, '').slice(0, 160);
+    return (entry.summary || '').replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/[*_`#]/g, '').slice(0, 160);
   }
   private clearThumbnails() {
     this.thumbnailVersion++;
@@ -419,7 +350,7 @@ export class ReaderView extends ItemView {
   private renderList() {
     const restoreFocus = this.list.contains(this.contentEl.ownerDocument.activeElement);
     const scroll = this.list.scrollTop; this.list.empty(); const entries = this.visibleEntries();
-    if (!entries.length) this.list.createDiv({ cls: 'qrs-empty', text: this.loading ? '正在获取文章…' : this.filter === 'favorites' ? '收藏喜欢的文章，在这里慢慢读。' : this.personalScope() && !this.entries.length ? '还没有文章。点击 + 添加订阅，或点击刷新获取文章。' : '暂无匹配文章，试试其他频道或筛选。' });
+    if (!entries.length) this.list.createDiv({ cls: 'qrs-empty', text: this.loading ? '正在获取文章…' : this.filter === 'favorites' ? '收藏喜欢的文章，在这里慢慢读。' : !this.plugin.state.subscriptions.length ? '还没有订阅。点击 + 添加订阅，或前往探索页选择订阅。' : !this.entries.length ? '还没有文章。点击刷新获取文章。' : '暂无匹配文章，请调整搜索或筛选。' });
     for (const entry of entries) {
       const read = this.plugin.state.readIds.includes(entry.id);
       const row = this.list.createEl('button', { cls: 'qrs-entry', attr: { 'data-entry-id': entry.id } });
@@ -439,10 +370,6 @@ export class ReaderView extends ItemView {
       this.renderThumbnail(row, entry);
       row.addEventListener('click', () => { void this.openArticle(entry); });
     }
-    if (this.hasMore && this.filter !== 'favorites') {
-      const button = this.list.createEl('button', { text: this.loading ? '加载中…' : '加载更早文章', cls: 'qrs-more' });
-      button.disabled = this.loading; button.addEventListener('click', () => { void this.loadEntries(true); });
-    }
     this.list.scrollTop = scroll;
     if (restoreFocus) this.reader.focus({ preventScroll: true });
   }
@@ -451,44 +378,69 @@ export class ReaderView extends ItemView {
     // Keep this unread reading session navigable after opening marks entries read.
     if (this.filter === 'unread') this.unreadSession.add(entry.id);
     const version = ++this.articleVersion; const state = this.plugin.state;
-    this.bundle = state.cache[entry.id] || state.favorites[entry.id] || { entry, rewrite: entry.rewrite ?? null, translation: null, fetchedAt: 0 };
+    const cached = state.cache[entry.id]?.entry;
+    const selected = cached?.contentSource === 'web' && cached.link === entry.link ? { ...entry, content: cached.content, image: cached.image || entry.image, contentSource: 'web' as const } : entry;
+    this.bundle = { entry: selected, fetchedAt: Date.now() }; this.translationHash = ''; this.translationRunning = false;
     state.readIds = [...new Set([...state.readIds, entry.id])].slice(-5000); this.run(() => this.plugin.persist());
-    this.mode = entry.origin === 'local' || entry.origin === 'vault' ? 'original' : state.settings.defaultMode; this.message = ''; this.articleLoading = true; this.reader.setAttribute('aria-busy', 'true');
+    this.mode = 'original'; this.message = ''; this.articleLoading = false; this.reader.setAttribute('aria-busy', 'false');
     this.contentEl.addClass('qrs-has-article'); this.renderReader(); this.reader.scrollTop = 0; this.lastReaderTop = 0; this.reader.focus({ preventScroll: true }); this.renderList();
     if (resume) { this.mode = resume.mode; this.pendingScroll = { listTop: resume.listTop, readerTop: resume.readerTop }; this.renderReader(); this.restoreOffsets(); }
-    if (entry.origin === 'local') {
-      this.bundle = { entry, rewrite: null, translation: null, fetchedAt: Date.now() };
-      this.plugin.remember(this.bundle); this.run(() => this.plugin.persist());
-      this.articleLoading = false; this.reader.setAttribute('aria-busy', 'false'); this.renderReader(); return;
+    this.plugin.remember(this.bundle); this.run(() => this.plugin.persist());
+    if (state.settings.webFullText && needsWebArticle(selected, this.reader.ownerDocument)) {
+      this.articleLoading = true; this.reader.setAttribute('aria-busy', 'true'); this.message = '正在抓取网页正文…'; this.renderReader();
+      const article = await this.plugin.webArticles.fetch(selected, this.reader.ownerDocument);
+      if (this.closed || version !== this.articleVersion || this.bundle?.entry.id !== entry.id) return;
+      this.articleLoading = false; this.reader.setAttribute('aria-busy', 'false');
+      if (article) {
+        this.bundle = { entry: { ...entry, content: article.content, image: article.image || entry.image, contentSource: 'web' }, fetchedAt: Date.now() };
+        this.plugin.remember(this.bundle); this.run(() => this.plugin.persist()); this.message = '';
+      } else this.message = '无法获取网页内容，请从“更多”中打开原文。';
+      this.renderReader();
     }
-    try {
-      const { bundle, warnings } = entry.origin === 'vault' ? { bundle: await this.plugin.vaultSources.article(entry), warnings: [] } : await this.plugin.api().article(entry.id);
-      if (this.closed || version !== this.articleVersion) return;
-      this.bundle = bundle; this.message = warnings.join('；'); this.plugin.remember(bundle); this.run(() => this.plugin.persist());
-    } catch (error) {
-      if (this.closed || version !== this.articleVersion) return;
-      const cached = this.bundle.fetchedAt ? ` 正在显示 ${new Date(this.bundle.fetchedAt).toLocaleString()} 的缓存。` : ' 可重新打开文章重试。';
-      this.message = `${error instanceof Error ? error.message : '获取正文失败。'}${cached}`;
+    void this.computeTranslationHash(version, entry.id);
+  }
+  private translationSegments(): TranslationSegment[] {
+    const bundle = this.bundle; if (!bundle) return [];
+    const fragment = articleFragment(bundle, this.contentEl.ownerDocument, this.plugin.state.settings.remoteImages);
+    return fragment ? extractSegments(fragment, bundle.entry.title) : [{ id: 'title', source: bundle.entry.title }];
+  }
+  private async computeTranslationHash(version: number, articleId: string) {
+    const hash = await contentHash(this.translationSegments());
+    if (this.closed || version !== this.articleVersion || this.bundle?.entry.id !== articleId) return;
+    this.translationHash = hash;
+    const artifact = this.plugin.state.translationArtifacts[articleId];
+    if (artifact?.contentHash === hash && artifact.segments.some(segment => segment.status === 'complete')) {
+      this.mode = this.plugin.state.settings.translationConfig.defaultMode; this.renderReader();
     }
-    if (!this.closed && version === this.articleVersion) { this.articleLoading = false; this.reader.setAttribute('aria-busy', 'false'); this.renderReader(); this.renderList(); }
   }
-  showSavedArticle(bundle: Bundle, mode: Mode) {
-    this.stopRestoring();
-    this.articleVersion++; this.articleLoading = false;
-    this.bundle = bundle; this.mode = mode; this.message = '';
-    this.reader.setAttribute('aria-busy', 'false'); this.contentEl.addClass('qrs-has-article');
-    this.renderReader(); this.reader.scrollTop = 0; this.lastReaderTop = 0; this.reader.focus({ preventScroll: true }); this.renderList();
+  private visiblePriorityIds(): string[] {
+    const viewport = this.reader.getBoundingClientRect();
+    return [...this.reader.querySelectorAll<HTMLElement>('[data-qrs-segment]')]
+      .map(element => ({ id: element.dataset.qrsSegment || '', distance: Math.max(viewport.top - element.getBoundingClientRect().bottom, element.getBoundingClientRect().top - viewport.bottom, 0) }))
+      .sort((a, b) => a.distance - b.distance).slice(0, 6).map(item => item.id);
   }
-  private noteCurrent() {
-    const bundle = this.bundle; if (!bundle) return;
+  private generateTranslation(reset = false) {
+    const bundle = this.bundle, version = this.articleVersion; if (!bundle || this.translationRunning) return;
+    const config = this.plugin.state.settings.translationConfig;
+    try { validateTranslationConfig(config); } catch (error) {
+      new Notice(error instanceof Error ? error.message : '请先配置 AI 翻译。'); this.plugin.openSettings('AI 翻译'); return;
+    }
     this.run(async () => {
-      this.plugin.remember(bundle);
-      const result = await this.plugin.noteArticle(bundle.entry, '', this.mode);
-      new Notice(result.added ? '已添加到今日日记。' : '今日日记中已有这篇文章。');
+      this.translationRunning = true; this.message = '正在生成译文…'; this.renderReader(true);
+      if (reset) await this.plugin.translationStore.clearArticle(bundle.entry.id);
+      const segments = this.translationSegments(), hash = await contentHash(segments); this.translationHash = hash;
+      try {
+        const artifact = await this.plugin.translationController.translate({ articleId: bundle.entry.id, contentHash: hash, segments,
+          priorityIds: this.visiblePriorityIds(), config, bypassMemory: reset,
+          isCurrent: () => !this.closed && version === this.articleVersion && this.bundle?.entry.id === bundle.entry.id && this.translationHash === hash,
+          onProgress: current => { if (version === this.articleVersion && current.articleId === this.bundle?.entry.id) { this.mode = config.defaultMode; this.renderReader(); } },
+        });
+        if (version === this.articleVersion) this.message = artifact.completed ? '翻译完成。' : '部分段落翻译失败，可重试失败段落。';
+      } catch (error) { if (version === this.articleVersion) this.message = error instanceof Error ? error.message : '翻译失败，请重试。'; }
+      if (version === this.articleVersion) { this.translationRunning = false; this.renderReader(); }
     });
   }
   private clearImages() {
-    this.markdownComponent?.unload(); this.markdownComponent = undefined;
     this.renderVersion++; this.imageObserver?.disconnect(); this.imageObserver = undefined;
     for (const url of this.blobUrls) URL.revokeObjectURL(url);
     this.blobUrls = [];
@@ -500,7 +452,6 @@ export class ReaderView extends ItemView {
       try {
         const blob = await this.plugin.images.load(url);
         if (this.closed || version !== this.renderVersion) return;
-        enableImageDrag(img, blob);
         const local = URL.createObjectURL(blob); this.blobUrls.push(local); img.src = local;
         img.onload = () => holder.removeClass('is-loading');
       } catch {
@@ -526,7 +477,6 @@ export class ReaderView extends ItemView {
     }
   }
   private renderReader(keepContent = false) {
-    this.selectionCapture?.clear();
     const active = this.contentEl.ownerDocument.activeElement;
     const restoreFocus = active !== this.reader && this.reader.contains(active);
     const scroll = this.reader.scrollTop;
@@ -538,13 +488,13 @@ export class ReaderView extends ItemView {
     const bundle = this.bundle;
     if (!bundle) {
       const empty = this.reader.createDiv('qrs-welcome');
-      empty.createDiv({ cls: 'qrs-welcome-brand', text: 'QIAOMU RSS' });
+      empty.createDiv({ cls: 'qrs-welcome-brand', text: 'PERSONAL RSS' });
       empty.createEl('h2', { text: '给阅读，留一点时间。' });
       empty.createEl('p', { cls: 'qrs-welcome-intro', text: '从列表中，挑一篇感兴趣的文章。' });
       const tips = [
-        ['边读边记', '点击文章右上角的笔记本，在旁边打开今日日记。阅读和思考可以同时进行。'],
-        ['留下有用的一段', '选中文字后，可追加到今日日记或当前笔记。也可以从右键菜单操作。'],
-        ['把剪藏变成阅读', '在“来源”中添加库内文件夹，把剪藏的 Markdown 文章放进阅读器。'],
+        ['找到想读的内容', '点击左上角的 +，可以手动添加订阅、导入 OPML，或从探索目录中选择。'],
+        ['只看还没读的', '用“未读”筛选缩小列表；打开文章后会自动标为已读，也可以随时改回未读。'],
+        ['收藏稍后再读', '点击书签保存文章，之后可在任何频道的“收藏”筛选中找到。'],
         ['找到舒服的排版', '正文右上角的字体按钮可以调整字号、行距和版心，改动立即保存。'],
         ['随时接着读', '切换频道后再回来，会恢复当前文章、列表位置和正文进度。'],
       ];
@@ -563,8 +513,7 @@ export class ReaderView extends ItemView {
     this.addIconButton(toolbar, this.focused ? 'panel-left-open' : 'panel-left-close', '显示或收起文章列表 [', () => this.toggleFocus());
     const modeId = `${this.appearanceId}-mode`; toolbar.createEl('label', { cls: 'qrs-visually-hidden', text: '阅读版本', attr: { for: modeId } });
     const select = toolbar.createEl('select', { cls: 'qrs-mode-select', attr: { id: modeId, 'data-qrs-field': '阅读版本' } });
-    for (const [mode, label] of Object.entries(modeLabels).filter(([mode]) => (bundle.entry.origin !== 'local' && bundle.entry.origin !== 'vault') || mode === 'original')) select.createEl('option', { value: mode, text: label });
-    select.disabled = bundle.entry.origin === 'local' || bundle.entry.origin === 'vault';
+    for (const [mode, label] of Object.entries(modeLabels)) select.createEl('option', { value: mode, text: label });
     select.value = this.mode; select.onchange = () => { this.mode = modeSchema.parse(select.value); this.renderReader(); };
     const nav = toolbar.createDiv('qrs-reader-nav');
     this.addIconButton(nav, 'chevron-up', '上一篇 K', () => this.navigate(-1));
@@ -585,34 +534,39 @@ export class ReaderView extends ItemView {
       await this.plugin.persist(); this.renderReader(true); this.renderList();
     }));
     readButton.setAttribute('aria-pressed', String(read));
-    this.addIconButton(actions, 'notebook-pen', '记到今日日记', () => this.noteCurrent());
+    const artifact = this.translationHash ? this.plugin.state.translationArtifacts[bundle.entry.id] : undefined;
+    const failed = artifact?.segments.some(segment => segment.status === 'failed');
+    const translate = this.addIconButton(actions, 'languages', this.translationRunning ? '正在翻译' : failed ? '重试失败段落' : artifact ? '继续生成翻译' : '生成翻译', () => this.generateTranslation());
+    translate.disabled = this.translationRunning;
     const more = this.addIconButton(actions, 'ellipsis', '更多文章操作', () => {
       const menu = new Menu(); const link = safeUrl(bundle.entry.link || '');
-      if (bundle.entry.origin === 'vault' && bundle.entry.markdownPath) menu.addItem(item => item.setTitle('打开源文件').setIcon('file-text').onClick(() => {
-        void this.app.workspace.openLinkText(bundle.entry.markdownPath!, '', true);
-      }));
       if (link) menu.addItem(item => item.setTitle('在浏览器打开原文').setIcon('external-link').onClick(() => { this.contentEl.win.open(link, '_blank', 'noopener,noreferrer'); }));
-      menu.addItem(item => item.setTitle('重新加载文章').setIcon('refresh-cw').onClick(() => { void this.openArticle(bundle.entry); }));
+      if (artifact) menu.addItem(item => item.setTitle('重新翻译').setIcon('languages').onClick(() => this.generateTranslation(true)));
+      if (artifact) menu.addItem(item => item.setTitle('清除本文译文').setIcon('trash-2').onClick(() => this.run(async () => { await this.plugin.translationStore.clearArticle(bundle.entry.id); this.mode = 'original'; this.renderReader(); })));
       menu.addItem(item => item.setTitle('选择频道').setIcon('rss').onClick(() => this.pickChannel()));
       const rect = more.getBoundingClientRect(); menu.showAtPosition({ x: rect.left, y: rect.bottom });
     });
     if (this.appearanceOpen) this.renderAppearanceSettings(toolbar);
     if (previous) { this.reader.append(previous); this.reader.scrollTop = scroll; this.restoreOffsets(); return; }
     const article = this.reader.createEl('article', { cls: 'qrs-article' });
-    article.createEl('h1', { text: titleOf(bundle.entry) });
+    const title = article.createEl('h1', { text: titleOf(bundle.entry), attr: { 'data-qrs-segment': 'title' } });
+    const translated = artifact?.contentHash === this.translationHash ? new Map(artifact.segments.filter(segment => segment.status === 'complete').map(segment => [segment.id, segment.translation])) : new Map<string, string>();
+    const titleTranslation = translated.get('title');
+    if (titleTranslation && this.mode === 'translated') title.setText(titleTranslation);
+    else if (titleTranslation && this.mode === 'bilingual') title.insertAdjacentElement('afterend', article.createDiv({ cls: 'qrs-translation qrs-title-translation', text: titleTranslation }));
     if (this.message) article.createDiv({ cls: 'qrs-feedback', text: this.message, attr: { role: 'status' } });
     try {
-      if (bundle.entry.origin === 'vault' && bundle.entry.markdown != null) {
-        const prose = article.createDiv('qrs-prose');
-        this.markdownComponent = new Component(); this.markdownComponent.load();
-        void MarkdownRenderer.render(this.app, bundle.entry.markdown, prose, bundle.entry.markdownPath || '', this.markdownComponent)
-          .then(() => prepareMarkdownImageDrags(this.app, this.plugin.images, prose, bundle.entry.markdownPath || ''))
-          .catch(() => { prose.setText('Markdown 无法显示，请打开源文件。'); });
-      } else {
-      const fragment = articleFragment(bundle, this.mode, article.ownerDocument, this.plugin.state.settings.remoteImages);
-      if (fragment) { this.prepareImages(fragment); article.createDiv('qrs-prose').append(fragment); }
-      else article.createDiv({ cls: 'qrs-empty', text: this.articleLoading ? '正在获取正文…' : `${modeLabels[this.mode]}暂无正文。可以切换版本，或从“更多”中打开原文。` });
-      }
+      const fragment = articleFragment(bundle, article.ownerDocument, this.plugin.state.settings.remoteImages);
+      if (fragment) {
+        const segments = extractSegments(fragment);
+        for (const segment of segments) {
+          const translation = translated.get(segment.id), element = segment.element; if (!translation || !element || this.mode === 'original') continue;
+          const node = article.ownerDocument.createElement('div'); node.className = 'qrs-translation'; node.textContent = translation;
+          element.insertAdjacentElement('afterend', node);
+          if (this.mode === 'translated' && !element.querySelector('a')) element.addClass('qrs-original-hidden');
+        }
+        this.prepareImages(fragment); article.createDiv('qrs-prose').append(fragment);
+      } else if (!this.articleLoading && !this.message) article.createDiv({ cls: 'qrs-empty', text: '订阅源没有提供正文，可以从“更多”中打开原文。' });
     } catch { article.createDiv({ cls: 'qrs-empty', text: '正文无法显示，请打开原文阅读。' }); }
     this.reader.scrollTop = scroll; this.restoreOffsets();
   }
