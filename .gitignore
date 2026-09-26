@@ -5,3 +5,10 @@ coverage/
 .env*
 *.log
 artifacts/
+
+# Internal analysis, planning, and development records
+/DESIGN.md
+/改造方案.md
+/docs/DISCOVERY.md
+/docs/VALIDATION.md
+/docs/WECHAT.md

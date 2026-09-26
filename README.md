@@ -2,29 +2,56 @@
 
 一个以个人 RSS / Atom 订阅为核心的 Obsidian 本地阅读器。项目基于 `qiaomu-ai-rss` 修改，保留原作者版权与 GPL-3.0-only 许可。
 
+本项目与原项目的定位不同：[`qiaomu-ai-rss`](https://github.com/joeseesun/qiaomu-ai-rss) 提供更完整的聚合频道、远程服务、内容处理与笔记集成体验；本项目则专注于个人 RSS / Atom 订阅、本地数据和用户自备模型，尽量减少对项目服务端的依赖。原项目非常优秀，并且仍在持续迭代，建议优先使用原项目；如果你更需要一个边界清晰、以本地个人订阅为主的阅读器，再选择本项目。
+
 ## 功能
 
-- 手动添加、编辑、分组和取消 RSS / Atom 订阅。
-- OPML 导入预览、去重与导出。
-- 离线“探索”目录：9 个编辑推荐和中文独立博客目录；浏览目录不会批量请求网站。
-- “我的订阅”、订阅分组和单个订阅源频道。
-- 搜索、未读筛选、收藏、专注阅读和可调排版。
-- RSS 正文安全清理、图片显示与本地图片缓存。
-- 可选的网页全文获取：Feed 正文不足时，在打开文章后尝试提取原网页正文。
-- 用户自备 OpenAI-compatible 模型的手动段落翻译，可切换原文、双语和仅译文。
-- 阅读、订阅、收藏、译文和设置均保存在当前 Obsidian vault 的插件数据中。
+![Personal RSS Reader 整体预览](docs/images/personal-rss-reader-overview.png)
 
-本版本不包含乔木聚合频道、乔木远程 API、日记/笔记写入、摘录浮层、内部回跳、图片拖入笔记或库内 Markdown 来源。
+### 主要功能
+
+- 手动添加、编辑、分组和取消 RSS / Atom 订阅，支持 OPML 导入预览、去重与导出。
+- 通过“我的订阅”、订阅分组和单个订阅源组织内容。
+- 支持搜索、未读筛选、收藏、专注阅读和可调排版。
+- 安全清理 RSS 正文，支持文章图片、缩略图及本地图片缓存。
+- 阅读记录、订阅、收藏、译文和设置均保存在当前 Obsidian vault 的插件数据中。
+
+### 改造部分
+
+- 移除乔木聚合频道、乔木远程 API，以及依赖远程服务的翻译和改写功能。
+- 保留“探索”入口，改为内置的离线推荐与中文独立博客目录；浏览目录时不会批量请求网站。
+- 增加可选的网页全文获取：Feed 正文不足时，在打开文章后尝试提取原网页正文。
+- 增加用户自备 OpenAI-compatible 模型的手动段落翻译，可切换原文、双语和仅译文。
+- 移除日记/笔记写入、摘录浮层、内部回跳、图片拖入笔记和库内 Markdown 来源，使插件专注于个人订阅阅读。
 
 ## 安装
 
-需要 Obsidian 1.13.0 或更新版本。构建后将 `main.js`、`manifest.json` 和 `styles.css` 放入：
+需要 Obsidian 1.13.0 或更新版本，可选择以下任一方式安装。
+
+### 方式一：直接复制（推荐）
+
+下载项目中的 `main.js`、`manifest.json` 和 `styles.css`，复制到：
 
 ```text
 .obsidian/plugins/personal-rss-reader/
 ```
 
-随后在 Obsidian 的第三方插件设置中启用 **Personal RSS Reader**。
+这是最简单的安装方式，不需要 Node.js 或其他构建工具。
+
+### 方式二：Fork 后自行构建
+
+Fork 本项目并克隆你自己的仓库，然后安装依赖并构建：
+
+```sh
+git clone https://github.com/<你的账号>/Personal-Rss-Reader.git
+cd Personal-Rss-Reader
+npm ci
+npm run build
+```
+
+构建完成后，将生成的 `main.js` 与仓库中的 `manifest.json`、`styles.css` 一起复制到上述插件目录。
+
+最后在 Obsidian 的“设置 → 第三方插件”中启用 **Personal RSS Reader**。
 
 ## 使用
 
