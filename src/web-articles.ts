@@ -19,7 +19,7 @@ function readableText(html: string, doc: Document): string {
 }
 
 export function needsWebArticle(entry: Entry, doc: Document): boolean {
-  return entry.contentSource !== 'web' && readableText(entry.content || '', doc).length < WEAK_FEED_CHARS && !!safePublicUrl(entry.link || '');
+  return !entry.audio && entry.contentSource !== 'web' && readableText(entry.content || '', doc).length < WEAK_FEED_CHARS && !!safePublicUrl(entry.link || '');
 }
 
 function isPrivateIPv4(host: string): boolean {

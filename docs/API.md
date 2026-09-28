@@ -4,7 +4,7 @@ Personal RSS Reader has no project-operated API. Runtime requests have two indep
 
 ## RSS / Atom feeds
 
-HTTP(S) GET requests use Obsidian `requestUrl` and are sent directly to URLs added manually, imported from OPML or selected in Explore. The parser accepts RSS 2.x, RSS 1.0/RDF and Atom 1.0.
+HTTP(S) GET requests use Obsidian `requestUrl` and are sent directly to URLs added manually, imported from OPML or selected in Explore. The parser accepts RSS 2.x, RSS 1.0/RDF and Atom 1.0. Podcast enclosures remain structured media fields rather than executable feed HTML.
 
 Limits and safeguards:
 
@@ -16,6 +16,10 @@ Limits and safeguards:
 - stable SHA-256 IDs based on feed URL and item identity;
 - refresh failure preserves cached articles;
 - OPML import is additive and performs no feed requests.
+
+## Podcast media
+
+Podcast playback has no project-operated proxy or catalog API. Audio is loaded on demand from a safe HTTP(S) enclosure URL whose MIME type is empty or starts with `audio/`. The plugin uses `preload="none"`, stores no audio files, and persists only the selected playback rate plus recent episode positions in plugin data.
 
 ## OpenAI-compatible translation
 

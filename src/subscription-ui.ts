@@ -40,7 +40,7 @@ export class SubscriptionManager extends Modal {
   private renderMine() {
     const form = this.body.createEl('form', { cls: 'qrs-subscription-add' });
     const fieldId = crypto.randomUUID();
-    form.createEl('label', { cls: 'qrs-visually-hidden', text: 'RSS 或 Atom 地址', attr: { for: `qrs-feed-${fieldId}` } });
+    form.createEl('label', { cls: 'qrs-visually-hidden', text: 'RSS、Atom 或播客地址', attr: { for: `qrs-feed-${fieldId}` } });
     const url = form.createEl('input', { type: 'url', placeholder: 'https://example.com/feed.xml', attr: { id: `qrs-feed-${fieldId}`, required: '' } });
     form.createEl('label', { cls: 'qrs-visually-hidden', text: '订阅分组', attr: { for: `qrs-group-${fieldId}` } });
     const group = form.createEl('input', { type: 'text', placeholder: '分组（可选）', attr: { id: `qrs-group-${fieldId}`, maxlength: '100' } });
@@ -63,7 +63,7 @@ export class SubscriptionManager extends Modal {
       }).catch(() => { this.message.setText('导出失败，请检查 OPML 导出文件夹。'); });
     };
     this.list = this.body.createDiv('qrs-subscription-list'); this.renderList();
-    this.body.createEl('p', { cls: 'qrs-subscription-help', text: '订阅仅保存在本库并直接读取订阅网站。AI 翻译仅在你手动触发时调用自备模型。' });
+    this.body.createEl('p', { cls: 'qrs-subscription-help', text: '文章与播客订阅仅保存在本库，并直接读取订阅源和媒体地址。AI 翻译仅在你手动触发时调用自备模型。' });
   }
   private renderList() {
     this.list.empty();
@@ -73,7 +73,8 @@ export class SubscriptionManager extends Modal {
       const row = this.list.createDiv('qrs-subscription-row');
       const info = row.createDiv('qrs-subscription-info');
       info.createDiv({ cls: 'qrs-subscription-name', text: feed.name });
-      info.createDiv({ cls: 'qrs-subscription-detail', text: `${feed.group || '未分组'} · ${new URL(feed.url).hostname} · ${feed.entries.length} 篇` });
+      const unit = feed.entries.some(entry => !!entry.audio) ? '集' : '篇';
+      info.createDiv({ cls: 'qrs-subscription-detail', text: `${feed.group || '未分组'} · ${new URL(feed.url).hostname} · ${feed.entries.length} ${unit}` });
       if (feed.error) info.createDiv({ cls: 'qrs-subscription-error', text: feed.error });
       const edit = row.createEl('button', { cls: 'qrs-subscription-icon', attr: { 'data-qrs-label': `编辑 ${feed.name}` } });
       setIcon(edit, 'pencil'); edit.createSpan({ cls: 'qrs-visually-hidden', text: `编辑 ${feed.name}` });

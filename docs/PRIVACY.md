@@ -6,7 +6,8 @@ Effective: 2026-09-09. Personal RSS Reader is a vault-local RSS / Atom reader. I
 
 - Adding or refreshing a subscription requests only that feed URL. Its host receives ordinary connection metadata. Refreshes are user-driven or occur when a selected feed cache is older than five minutes; no background polling is registered.
 - Optional webpage full-text extraction is off by default. When enabled, opening an article with less than 200 characters of feed body may request its linked webpage once. The destination receives ordinary connection metadata. Successfully extracted content is cached locally. The request API may follow redirects that the plugin cannot validate hop by hop; enable this only for trusted feeds.
-- The offline discovery catalog performs no network requests while browsing, searching or filtering. Clicking Subscribe fetches only the selected feed.
+- The nine-item editorial discovery list performs no network requests while browsing, searching or filtering. Clicking Subscribe fetches only the selected feed.
+- Podcast audio is loaded only after opening a feed entry with an audio enclosure. The media host receives the request and ordinary connection metadata. Audio is streamed directly, is not proxied by the project and is not saved to the plugin cache.
 - When images are enabled, raster article images and thumbnails are downloaded through Obsidian and kept in the plugin image cache. Their hosts receive the request. SVG and executable payloads are not rendered.
 - Opening an article link deliberately uses the system browser and is governed by that site's policy.
 - AI translation is disabled by default. Only “Test connection” or a manual “Generate translation” action contacts the user-configured OpenAI-compatible service. The request includes the target language, minimal instructions and the selected article's current batch of plain text. It does not include the article URL, subscriptions, searches, favorites or read state.
@@ -15,7 +16,7 @@ The project does not receive or proxy any of these requests.
 
 ## Local storage
 
-Settings, feed URLs, cached entries (including optional extracted webpage text), read IDs, favorites, translation artifacts and translation memory are stored through Obsidian in this vault's plugin data. Images are stored in the configured plugin directory's `image-cache` folder. OPML export is the only ordinary vault-file write and occurs only when explicitly requested.
+Settings, feed URLs, cached entries (including optional extracted webpage text), read IDs, favorites, recent podcast positions, translation artifacts and translation memory are stored through Obsidian in this vault's plugin data. Images are stored in the configured plugin directory's `image-cache` folder. Podcast audio is not cached. OPML export is the only ordinary vault-file write and occurs only when explicitly requested.
 
 API keys and private feed URLs are stored as local plaintext. They are excluded from translation prompts, error details, cache keys and OPML except that a feed URL itself is necessarily present in an OPML subscription export. If the vault configuration is synchronized, the chosen sync provider may copy plugin data and image cache files.
 

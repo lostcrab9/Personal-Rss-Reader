@@ -25,7 +25,9 @@ export class Subscriptions {
     if (this.state().subscriptions.some(feed => feed.url === url)) throw new Error('这个订阅源已经添加。');
     if (this.state().subscriptions.length >= MAX_SUBSCRIPTIONS) throw new Error(`最多添加 ${MAX_SUBSCRIPTIONS} 个订阅源。`);
     const parsed = await this.fetch(url, doc);
-    const feed = subscriptionSchema.parse({ id: `local:${await stableId(url)}`, url, name: parsed.name, group: group.trim().slice(0, 100), entries: parsed.entries.slice(0, 5), updatedAt: Date.now() });
+    const requestedGroup = group.trim().slice(0, 100);
+    const feed = subscriptionSchema.parse({ id: `local:${await stableId(url)}`, url, name: parsed.name,
+      group: requestedGroup || (parsed.entries.some(entry => !!entry.audio) ? '播客' : ''), entries: parsed.entries.slice(0, 5), updatedAt: Date.now() });
     // Recheck after the network request, including concurrently submitted duplicate URLs.
     if (this.state().subscriptions.some(item => item.url === url)) throw new Error('这个订阅源已经添加。');
     if (this.state().subscriptions.length >= MAX_SUBSCRIPTIONS) throw new Error(`最多添加 ${MAX_SUBSCRIPTIONS} 个订阅源。`);
@@ -51,6 +53,7 @@ export class Subscriptions {
     state.subscriptions = state.subscriptions.filter(feed => feed.id !== id);
     for (const [key, bundle] of Object.entries(state.cache)) if (bundle.entry.sourceId === id) delete state.cache[key];
     for (const entry of removed?.entries || []) if (!state.favorites[entry.id]) delete state.translationArtifacts[entry.id];
+    for (const entry of removed?.entries || []) delete state.playbackProgress[entry.id];
     delete state.channelStates[id];
     if (state.settings.lastSource === id) state.settings.lastSource = '@local';
     // Favorites are independent local snapshots and remain available after unsubscribing.

@@ -128,8 +128,8 @@ class RssSettings extends PluginSettingTab {
   }
   private renderSources() {
     const settings = this.plugin.state.settings;
-    new Setting(this.containerEl).setName('我的订阅').setDesc('添加 RSS / Atom、探索推荐、分组与 OPML 导入导出。').addButton(button => button.setButtonText('管理订阅').onClick(() => this.plugin.manageSubscriptions()));
-    new Setting(this.containerEl).setName('探索').setDesc('浏览离线内置的推荐订阅和中文独立博客目录。').addButton(button => button.setButtonText('打开探索').onClick(() => this.plugin.manageSubscriptions('explore')));
+    new Setting(this.containerEl).setName('我的订阅').setDesc('添加文章或播客 RSS、探索推荐、分组与 OPML 导入导出。').addButton(button => button.setButtonText('管理订阅').onClick(() => this.plugin.manageSubscriptions()));
+    new Setting(this.containerEl).setName('探索').setDesc('浏览离线内置的 9 个编辑推荐；点击订阅时才请求对应 RSS。').addButton(button => button.setButtonText('打开探索').onClick(() => this.plugin.manageSubscriptions('explore')));
     let pending = settings.folder;
     new Setting(this.containerEl).setName('OPML 导出文件夹').setDesc('导出的 OPML 文件保存在当前库的这个文件夹。').addText(text => text.setValue(settings.folder).onChange(value => { pending = value; })).addButton(button => button.setButtonText('保存').onClick(async () => {
       try { settings.folder = folderPath(pending); await this.plugin.persist(); new Notice('文件夹已保存。'); }

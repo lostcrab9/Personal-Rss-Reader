@@ -618,35 +618,6 @@ SOFTWARE.
 
 ```
 
-## Chinese independent blogs catalog
-
-Source: https://github.com/timqian/chinese-independent-blogs
-Snapshot: 4fbded82114fc10f16770d53f287e3af951678cd. Used as a local directory; individual blog content remains with its authors.
-
-```text
-MIT License
-
-Copyright (c) 2019 Tim Qian
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
-
 ## Bundled Chinese reading fonts
 
 The five unmodified fonts listed in [fonts/README.md](fonts/README.md) are distributed under SIL OFL 1.1. Copyright notices and the complete license are in [fonts/OFL.txt](fonts/OFL.txt) and embedded in the main.js release banner.

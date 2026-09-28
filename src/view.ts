@@ -8,6 +8,7 @@ import { modeLabels, modeSchema, readingFontSchema, safeUrl, titleOf, type Chann
 import { contentHash, extractSegments, type TranslationSegment } from './translation/segments';
 import { validateTranslationConfig } from './translation/service';
 import { needsWebArticle } from './web-articles';
+import { AudioDock } from './media';
 export const VIEW_TYPE = 'personal-rss-reader';
 type Filter = 'all' | 'unread' | 'favorites';
 function feedHost(url: string) { try { return new URL(url).hostname; } catch { return 'RSS'; } }
@@ -52,6 +53,7 @@ export class ReaderView extends ItemView {
   }
   private list!: HTMLElement;
   private reader!: HTMLElement;
+  private audioDock?: AudioDock;
   private status!: HTMLElement;
   private channelButton!: HTMLButtonElement;
   private searchBox!: HTMLElement;
@@ -102,12 +104,13 @@ export class ReaderView extends ItemView {
     return Promise.resolve();
   }
   onClose(): Promise<void> {
-    this.saveChannel(); this.channelPicker?.close(false); this.stopRestoring();
+    this.audioDock?.stop(); this.saveChannel(); this.channelPicker?.close(false); this.stopRestoring();
     if (this.checkpointTimer) window.clearTimeout(this.checkpointTimer);
     this.closed = true; this.listVersion++; this.articleVersion++; this.clearImages(); this.clearThumbnails(); this.contentEl.onkeydown = null;
     return this.plugin.persist().catch(() => undefined);
   }
   reset() {
+    this.audioDock?.stop();
     this.channelPicker?.close(false); this.stopRestoring();
     if (this.checkpointTimer) window.clearTimeout(this.checkpointTimer);
     this.unreadSession.clear();
@@ -168,7 +171,20 @@ export class ReaderView extends ItemView {
     this.status = sidebar.createDiv({ cls: 'qrs-status', attr: { role: 'status', 'aria-live': 'polite' } });
     this.list = sidebar.createDiv({ cls: 'qrs-list' });
     this.createResizeHandle(body);
-    this.reader = body.createEl('section', { cls: 'qrs-reader', attr: { tabindex: '0' } });
+    const readingPane = body.createDiv('qrs-reading-pane');
+    this.reader = readingPane.createEl('section', { cls: 'qrs-reader', attr: { tabindex: '0' } });
+    this.audioDock = new AudioDock(readingPane, entry => { void this.openArticle(entry); }, {
+      position: id => this.plugin.state.playbackProgress[id]?.position || 0,
+      rate: () => this.plugin.state.settings.playbackRate,
+      savePosition: (id, position) => {
+        if (position > 1) this.plugin.state.playbackProgress[id] = { position, updatedAt: Date.now() };
+        else delete this.plugin.state.playbackProgress[id];
+        const ordered = Object.entries(this.plugin.state.playbackProgress).sort((a, b) => b[1].updatedAt - a[1].updatedAt).slice(0, 500);
+        this.plugin.state.playbackProgress = Object.fromEntries(ordered);
+        this.run(() => this.plugin.persist());
+      },
+      saveRate: rate => { this.plugin.state.settings.playbackRate = rate; this.run(() => this.plugin.persist()); },
+    });
     root.onkeydown = event => this.onReaderKey(event);
     for (const element of [this.list, this.reader]) {
       for (const event of ['wheel', 'touchstart', 'pointerdown', 'keydown'] as const) element.addEventListener(event, () => this.stopRestoring(), { passive: true });
@@ -203,7 +219,8 @@ export class ReaderView extends ItemView {
       ...groups.map(group => ({ id: `@group:${group}`, name: group, section: '订阅分组' as const,
         subtitle: `${feeds.filter(feed => feed.group === group).length} 个订阅源`, icon: 'folder' })),
       ...feeds.map(feed => ({ id: feed.id, name: feed.name, section: '我的订阅源' as const,
-        subtitle: `${feed.group ? `${feed.group} · ` : ''}${feedHost(feed.url)} · ${feed.entries.length} 篇`, monogram: feed.name.trim().slice(0, 1), group: feed.group })),
+        subtitle: `${feed.group ? `${feed.group} · ` : ''}${feedHost(feed.url)} · ${feed.entries.length} ${feed.entries.some(entry => !!entry.audio) ? '集' : '篇'}`,
+        monogram: feed.name.trim().slice(0, 1), group: feed.group })),
     ];
   }
   private selectedFeeds() {
@@ -359,6 +376,7 @@ export class ReaderView extends ItemView {
       const copy = row.createSpan('qrs-entry-copy');
       const meta = copy.createSpan('qrs-entry-meta');
       meta.createSpan({ text: this.sourceName(entry), cls: 'qrs-source-name' });
+      if (entry.audio) { const podcast = meta.createSpan({ cls: 'qrs-podcast-mark', attr: { 'aria-label': '播客单集' } }); setIcon(podcast, 'headphones'); }
       const date = entry.publishedTs ? new Date(entry.publishedTs) : entry.published ? new Date(entry.published) : null;
       meta.createSpan({ cls: 'qrs-date', text: date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' }) : '' });
       const title = copy.createDiv('qrs-entry-title');
@@ -384,6 +402,7 @@ export class ReaderView extends ItemView {
     state.readIds = [...new Set([...state.readIds, entry.id])].slice(-5000); this.run(() => this.plugin.persist());
     this.mode = 'original'; this.message = ''; this.articleLoading = false; this.reader.setAttribute('aria-busy', 'false');
     this.contentEl.addClass('qrs-has-article'); this.renderReader(); this.reader.scrollTop = 0; this.lastReaderTop = 0; this.reader.focus({ preventScroll: true }); this.renderList();
+    this.audioDock?.open(selected);
     if (resume) { this.mode = resume.mode; this.pendingScroll = { listTop: resume.listTop, readerTop: resume.readerTop }; this.renderReader(); this.restoreOffsets(); }
     this.plugin.remember(this.bundle); this.run(() => this.plugin.persist());
     if (state.settings.webFullText && needsWebArticle(selected, this.reader.ownerDocument)) {

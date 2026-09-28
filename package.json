@@ -1,7 +1,7 @@
 {
   "name": "personal-rss-reader",
   "version": "0.18.2",
-  "description": "A private, vault-local RSS and Atom reader with optional bring-your-own-model translation.",
+  "description": "A private, vault-local article and podcast RSS reader with optional bring-your-own-model translation.",
   "license": "GPL-3.0-only",
   "private": true,
   "scripts": {

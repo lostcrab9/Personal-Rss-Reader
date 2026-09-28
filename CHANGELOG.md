@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Add direct Podcast RSS playback with audio enclosure parsing, show artwork, playback speed and vault-local resume positions; podcast media streams from its original host without a project proxy.
+- Keep the two-row podcast player inside the reading pane and above Obsidian's status bar, aligning its close control, title, speed selector and playback bar with the article margins.
+- Limit Explore to the nine editorial recommendations and remove the bundled 1,342-source independent-blog catalog.
+
 ## 0.18.2-personal — 2026-09-09
 
 - Rework the plugin into Personal RSS Reader with personal feeds as the only runtime content path.

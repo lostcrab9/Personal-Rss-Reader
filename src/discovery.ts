@@ -1,20 +1,13 @@
-import blogCatalog from './data/independent-blogs.json';
-export const blogCatalogSource = blogCatalog.source;
-export const blogCatalogRevision = blogCatalog.revision;
-
-const BUILT_IN_FEED_URLS = new Set(['https://blog.qiaomu.ai/feed.xml']);
 export const categories = ['全部', 'AI 与技术', '产品与工具', '人文与生活'] as const;
-export type DiscoveryCollection = 'featured' | 'blogs';
 export interface DiscoveryFeed {
   id: string;
   name: string;
   description: string;
-  category: typeof categories[number] | '独立博客';
+  category: typeof categories[number];
   language: '中文' | '英文';
   icon: string;
   url: string;
   site?: string;
-  tags?: string[];
 }
 
 // Curated metadata only. Opening/searching the catalog never requests these feeds.
@@ -30,14 +23,8 @@ export const discoveryFeeds: DiscoveryFeed[] = [
   { id: 'reorx', name: 'Reorx’s Forge', description: '软件开发、生产力工具与数字生活的独立思考。', category: '产品与工具', language: '中文', icon: 'hammer', url: 'https://reorx.com/feed.xml', site: 'https://reorx.com/' },
   { id: 'pseudoyu', name: 'pseudoyu', description: '技术实践、个人成长与生活周报，完整记录思考过程。', category: '人文与生活', language: '中文', icon: 'notebook-pen', url: 'https://www.pseudoyu.com/zh/index.xml', site: 'https://www.pseudoyu.com/zh/' },
 ];
-export const independentBlogs: DiscoveryFeed[] = blogCatalog.items
-  .filter(blog => !BUILT_IN_FEED_URLS.has(blog.url))
-  .map(blog => ({ ...blog, description: blog.tags.join(' · ') || '中文独立博客', category: '独立博客', language: '中文', icon: 'notebook-pen' }));
-export const blogTags = [...new Set(independentBlogs.flatMap(blog => blog.tags ?? []))].sort((a, b) => a.localeCompare(b, 'zh'));
-
-export function filterDiscovery(query: string, category: string, collection: DiscoveryCollection = 'featured', tag = ''): DiscoveryFeed[] {
+export function filterDiscovery(query: string, category: string): DiscoveryFeed[] {
   const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
-  const source = collection === 'blogs' ? independentBlogs : discoveryFeeds;
-  return source.filter(feed => (collection === 'blogs' ? !tag || feed.tags?.includes(tag) : category === '全部' || feed.category === category)
+  return discoveryFeeds.filter(feed => (category === '全部' || feed.category === category)
     && terms.every(term => `${feed.name} ${feed.description} ${feed.category} ${feed.language} RSS Atom ${feed.site ?? ''} ${feed.url}`.toLocaleLowerCase().includes(term)));
 }

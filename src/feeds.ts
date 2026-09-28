@@ -60,11 +60,11 @@ export function contentWithBase(html: string, base: string, doc: Document): { ht
   const image = fragment.querySelector('img[src]')?.getAttribute('src') || undefined;
   return { html: Array.from(fragment.childNodes).map(node => node.nodeType === 1 ? (node as Element).outerHTML : escapeXml(node.textContent || '')).join(''), image };
 }
-function entryImage(item: Element, contentImage: string | undefined, base: string): string | undefined {
+function entryImage(item: Element, contentImage: string | undefined, feedImage: string | undefined, base: string): string | undefined {
   for (const node of Array.from(item.getElementsByTagName('*'))) {
     const name = node.localName.toLocaleLowerCase();
     const type = node.getAttribute('type') || '';
-    const isImage = name === 'thumbnail' ||
+    const isImage = name === 'thumbnail' || name === 'image' ||
       (name === 'content' && (node.getAttribute('medium') === 'image' || type.startsWith('image/'))) ||
       (name === 'enclosure' && type.startsWith('image/')) ||
       (name === 'link' && node.getAttribute('rel') === 'enclosure' && type.startsWith('image/'));
@@ -73,7 +73,28 @@ function entryImage(item: Element, contentImage: string | undefined, base: strin
     const resolved = raw ? safeUrl(raw, baseUrl(node, base)) : null;
     if (resolved) return resolved;
   }
-  return contentImage ? safeUrl(contentImage, base) || undefined : undefined;
+  return contentImage ? safeUrl(contentImage, base) || undefined : feedImage;
+}
+function durationSeconds(value: string): number | undefined {
+  const parts = value.trim().split(':');
+  if (!parts.length || parts.some(part => !/^\d+(?:\.\d+)?$/.test(part))) return undefined;
+  const seconds = parts.reduce((total, part) => total * 60 + Number(part), 0);
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds : undefined;
+}
+function entryAudio(item: Element, base: string): Entry['audio'] {
+  for (const node of Array.from(item.getElementsByTagName('*'))) {
+    const name = node.localName.toLocaleLowerCase(), type = (node.getAttribute('type') || '').toLocaleLowerCase();
+    const enclosure = name === 'enclosure' || (name === 'link' && node.getAttribute('rel') === 'enclosure');
+    const mediaAudio = name === 'content' && (node.getAttribute('medium') === 'audio' || type.startsWith('audio/'));
+    if (!enclosure && !mediaAudio) continue;
+    const raw = node.getAttribute('url') || node.getAttribute('href');
+    const resolved = raw ? safeUrl(raw, baseUrl(node, base)) : null;
+    if (!resolved || type && !type.startsWith('audio/')) continue;
+    const extensionLooksAudio = /\.(?:aac|flac|m4a|mp3|oga|ogg|opus|wav)(?:$|[?#])/i.test(resolved);
+    if (!type && !extensionLooksAudio) continue;
+    return { url: resolved, type: type || null, durationSeconds: durationSeconds(text(item, 'duration')) };
+  }
+  return null;
 }
 export async function parseFeed(xml: string, url: string, doc: Document): Promise<{ name: string; entries: Entry[] }> {
   const root = xmlDocument(xml, doc).documentElement;
@@ -82,6 +103,9 @@ export async function parseFeed(xml: string, url: string, doc: Document): Promis
   if (!atom && !(['rss', 'RDF'].includes(root.localName) && channel)) throw new Error('这个地址不是 RSS 或 Atom 订阅源，请填写订阅文件地址。');
   const parent = atom ? root : channel!;
   const name = plain(text(parent, 'title'), doc).slice(0, 200) || new URL(url).hostname;
+  const imageNode = child(parent, 'image');
+  const rawFeedImage = (imageNode && (imageNode.getAttribute('href') || text(imageNode, 'url'))) || text(parent, 'icon') || text(parent, 'logo');
+  const feedImage = rawFeedImage ? safeUrl(rawFeedImage, url) || undefined : undefined;
   const sourceId = `local:${await stableId(url)}`;
   const items = atom ? children(root, 'entry') : children(root.localName === 'RDF' ? root : parent, 'item');
   const entries: Entry[] = []; const ids = new Set<string>(); let size = 0;
@@ -100,7 +124,8 @@ export async function parseFeed(xml: string, url: string, doc: Document): Promis
     const publishedTs = Date.parse(published);
     const contentBase = contentNode && hasXmlBase(contentNode) ? baseUrl(contentNode, url) : link || base;
     const parsedContent = contentWithBase(raw.slice(0, 100_000), contentBase, doc);
-    const entry: Entry = { id, sourceId, origin: 'local', sourceName: name, title, link: link || url, image: entryImage(item, parsedContent.image, contentBase),
+    const entry: Entry = { id, sourceId, origin: 'local', sourceName: name, title, link: link || url, image: entryImage(item, parsedContent.image, feedImage, contentBase),
+      audio: entryAudio(item, base),
       published, publishedTs: Number.isNaN(publishedTs) ? null : publishedTs,
       author: atom ? text(child(item, 'author') || root, 'name') : text(item, 'creator') || text(item, 'author'),
       summary: plain(raw, doc).slice(0, 240), content: parsedContent.html + (raw.length > 100_000 ? '<p>正文较长，已缓存部分内容。请打开原文阅读全文。</p>' : ''), contentSource: 'feed' };

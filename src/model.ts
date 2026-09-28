@@ -12,6 +12,7 @@ export const entrySchema = z.object({
   id: z.string().min(1), sourceId: z.string(), origin: z.literal('local').default('local'), sourceName: optionalText,
   title: z.string(), link: optionalText, author: optionalText, published: optionalText, publishedTs: z.number().nullish(),
   summary: optionalText, content: optionalText, image: optionalText, contentSource: z.enum(['feed', 'web']).optional(),
+  audio: z.object({ url: z.string(), type: optionalText, durationSeconds: z.number().nonnegative().nullish() }).nullish(),
 });
 export type Entry = z.infer<typeof entrySchema>;
 
@@ -52,6 +53,7 @@ export type ChannelState = z.infer<typeof channelStateSchema>;
 
 const settingsSchema = z.object({
   folder: z.string().default('Personal RSS Reader'), remoteImages: z.boolean().default(true), webFullText: z.boolean().default(false),
+  playbackRate: z.number().min(0.75).max(2).catch(1).default(1),
   listWidth: z.number().min(220).max(520).default(300), fontSize: z.number().int().min(14).max(32).default(19),
   customFont: z.string().max(200).catch('').default(''), fontFamily: readingFontSchema.default('fangsong'),
   lineHeight: z.number().min(1.5).max(2.4).default(1.9), lineWidth: z.union([z.literal(28), z.literal(36), z.literal(44)]).default(36),
@@ -59,13 +61,14 @@ const settingsSchema = z.object({
 });
 
 export const stateSchema = z.object({
-  settings: settingsSchema.default({ folder: 'Personal RSS Reader', remoteImages: true, webFullText: false, listWidth: 300, fontSize: 19,
+  settings: settingsSchema.default({ folder: 'Personal RSS Reader', remoteImages: true, webFullText: false, playbackRate: 1, listWidth: 300, fontSize: 19,
     fontFamily: 'fangsong', customFont: '', lineHeight: 1.9, lineWidth: 36, lastSource: '@local',
     translationConfig: { enabled: false, baseUrl: '', apiKey: '', model: '', targetLanguage: '简体中文', defaultMode: 'bilingual' } }),
   readIds: z.array(z.string()).default([]), favorites: z.record(z.string(), bundleSchema).catch({}).default({}),
   subscriptions: z.array(subscriptionSchema).catch([]).default([]), channelStates: z.record(z.string(), channelStateSchema).catch({}).default({}),
   cache: z.record(z.string(), bundleSchema).catch({}).default({}), translationArtifacts: z.record(z.string(), translationArtifactSchema).catch({}).default({}),
   translationMemory: z.record(z.string(), translationMemoryItemSchema).catch({}).default({}), translationDataVersion: z.literal(1).catch(1).default(1),
+  playbackProgress: z.record(z.string(), z.object({ position: z.number().nonnegative(), updatedAt: z.number().nonnegative() })).catch({}).default({}),
 });
 export type State = z.infer<typeof stateSchema>;
 
@@ -101,6 +104,7 @@ export function initialState(data: unknown): State {
     favorites: localBundles(raw.favorites), cache: localBundles(raw.cache), channelStates,
     translationArtifacts: raw.translationDataVersion === 1 ? raw.translationArtifacts : {},
     translationMemory: raw.translationDataVersion === 1 ? raw.translationMemory : {}, translationDataVersion: 1,
+    playbackProgress: raw.playbackProgress,
   });
 }
 

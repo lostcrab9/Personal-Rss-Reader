@@ -29,6 +29,20 @@ describe('feed formats and article identity', () => {
     const { entries } = await parseFeed(xml, 'https://example.com/feed', document);
     expect(entries[0].image).toBe('https://example.com/thumb.jpg');
   });
+  it('parses podcast audio, duration and show artwork without rendering embedded media HTML', async () => {
+    const xml = '<rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"><channel><title>Podcast</title><itunes:image href="https://example.com/show.jpg"/><item><guid>episode</guid><title>Episode</title><itunes:duration>1:02:03</itunes:duration><enclosure url="https://media.example/episode.mp3" type="audio/mpeg"/><description><![CDATA[<iframe src="https://evil.test"></iframe><p>Show notes</p>]]></description></item></channel></rss>';
+    const { entries } = await parseFeed(xml, 'https://example.com/podcast.xml', document);
+    expect(entries[0].audio).toEqual({ url: 'https://media.example/episode.mp3', type: 'audio/mpeg', durationSeconds: 3723 });
+    expect(entries[0].image).toBe('https://example.com/show.jpg');
+    expect(entries[0].content).not.toContain('iframe');
+  });
+  it('parses Atom audio enclosures and rejects non-audio enclosure payloads', async () => {
+    const xml = '<feed xmlns="http://www.w3.org/2005/Atom"><title>Podcast</title><entry><id>one</id><title>Episode</title><link rel="enclosure" href="https://media.example/one.m4a" type="audio/mp4"/><summary>Notes</summary></entry></feed>';
+    const { entries } = await parseFeed(xml, 'https://example.com/feed.xml', document);
+    expect(entries[0].audio?.url).toBe('https://media.example/one.m4a');
+    const unsafe = await parseFeed(xml.replace('audio/mp4', 'text/html'), 'https://example.com/feed.xml', document);
+    expect(unsafe.entries[0].audio).toBeNull();
+  });
   it('resolves relative root xml:base only once', async () => {
     const xml = atom.replace('https://example.org/blog/', '../blog/');
     const { entries } = await parseFeed(xml, 'https://example.org/feeds/feed.xml', document);
@@ -91,6 +105,13 @@ describe('local subscription lifecycle', () => {
     expect(feed.entries).toHaveLength(5);
     await service.refresh([feed.id], document, true);
     expect(feed.entries).toHaveLength(8);
+  });
+  it('puts detected podcast feeds in the podcast group unless the user chose a group', async () => {
+    const state = initialState(null);
+    const xml = '<rss><channel><title>Podcast</title><item><guid>one</guid><title>Episode</title><enclosure url="https://media.example/one.mp3" type="audio/mpeg"/></item></channel></rss>';
+    const service = new Subscriptions(() => state, async () => {}, async () => ({ status: 200, text: xml }));
+    expect((await service.add('https://example.com/podcast', '', document)).group).toBe('播客');
+    expect((await service.add('https://example.com/second', '收藏节目', document)).group).toBe('收藏节目');
   });
   it('adds, rejects duplicates, edits groups and refreshes without duplicating articles', async () => {
     const state = initialState(null), persist = vi.fn(async () => {}), transport = vi.fn(async () => ({ status: 200, text: rss() }));

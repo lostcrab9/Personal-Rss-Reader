@@ -14,11 +14,9 @@ try{
  cdp('Emulation.setFocusEmulationEnabled',{enabled:true});
  evaluate(close+"document.body.removeClass('theme-dark');document.body.addClass('theme-light');return true;");
  command('command','id=personal-rss-reader:explore-subscriptions');pause();
- evaluate("const q=document.querySelector('.qrs-discovery-search');q.value='';q.dispatchEvent(new Event('input'));document.querySelectorAll('.qrs-discovery-collections button')[0].click();document.querySelector('.qrs-discovery').scrollTop=0;return true;");
- check('Desktop catalog has no horizontal overflow',"const e=document.querySelector('.qrs-discovery');return{ok:e.scrollWidth<=e.clientWidth,width:e.clientWidth,scrollWidth:e.scrollWidth};");
+ evaluate("const q=document.querySelector('.qrs-discovery-search');q.value='';q.dispatchEvent(new Event('input'));document.querySelector('.qrs-discovery').scrollTop=0;return true;");
+ check('Desktop recommendations have no horizontal overflow',"const e=document.querySelector('.qrs-discovery');return{ok:e.scrollWidth<=e.clientWidth,width:e.clientWidth,scrollWidth:e.scrollWidth};");
  screenshot('discovery-featured');
- evaluate("document.querySelectorAll('.qrs-discovery-collections button')[1].click();const tags=document.querySelector('.qrs-discovery-tags');tags.value='';tags.dispatchEvent(new Event('change'));return true;");
- screenshot('discovery-blogs');
  command('command','id=personal-rss-reader:manage-subscriptions');pause();
  const focusCheck="const inputs=[...document.querySelectorAll('.qrs-subscription-add input')];const results=inputs.map(e=>{e.focus();const s=getComputedStyle(e),r=e.getBoundingClientRect(),p=e.closest('.modal-content').getBoundingClientRect();return{inset:s.boxShadow.includes('inset'),outline:s.outlineStyle,inside:r.left>=p.left&&r.right<=p.right&&r.top>=p.top};});inputs[0].focus();return{ok:results.every(r=>r.inset&&r.outline==='none'&&r.inside),results};";
  check('Desktop URL and group input focus stays inside bounds',focusCheck);screenshot('subscriptions-manager');
@@ -26,7 +24,7 @@ try{
  evaluate("document.body.removeClass('theme-light');document.body.addClass('theme-dark');return true;");pause();
  check('Narrow dark URL and group focus stays inside bounds',focusCheck);screenshot('subscriptions-narrow');
  evaluate(close+'return true;');command('command','id=personal-rss-reader:explore-subscriptions');pause();
- check('390px blog catalog fits and search retains full focus ring',"const e=document.querySelector('.qrs-discovery'),q=e.querySelector('input[type=search]');q.focus();return{ok:e.scrollWidth<=e.clientWidth&&getComputedStyle(q).boxShadow.includes('inset'),width:e.clientWidth,scrollWidth:e.scrollWidth,cards:e.querySelectorAll('.qrs-discovery-card').length};");
+ check('390px recommendations fit and search retains full focus ring',"const e=document.querySelector('.qrs-discovery'),q=e.querySelector('input[type=search]');q.focus();return{ok:e.scrollWidth<=e.clientWidth&&getComputedStyle(q).boxShadow.includes('inset'),width:e.clientWidth,scrollWidth:e.scrollWidth,cards:e.querySelectorAll('.qrs-discovery-card').length};");
  screenshot('discovery-narrow');
 }finally{
  cdp('Emulation.clearDeviceMetricsOverride',{});
